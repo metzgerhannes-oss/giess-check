@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#17324d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gieß-Check">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<title>Gieß-Check</title>
+<style>
+:root{--navy:#17324d;--blue:#2f6d8d;--bg:#f2f5f7;--card:#fff;--line:#d9e1e6;--txt:#17222b;--muted:#687680;--ok:#e8f5ec;--warn:#fff4da;--bad:#fae8e5}
+*{box-sizing:border-box}
+html{background:var(--navy)}
+body{margin:0;background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;color:var(--txt);min-height:100vh}
+.wrap{max-width:1000px;margin:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(30px + env(safe-area-inset-bottom))}
+.head{background:var(--navy);color:#fff;border-radius:22px;padding:24px 18px}
+h1{margin:0 0 8px;font-size:37px;letter-spacing:-.03em}.lead{color:#dbe7ed;margin:0 0 20px;line-height:1.45}
+form{display:flex;gap:10px;max-width:480px}input{flex:1;min-width:0;padding:14px 15px;border:0;border-radius:12px;font-size:20px}
+button{border:0;border-radius:12px;padding:13px 17px;font-size:16px;font-weight:700;cursor:pointer}
+.go{background:white;color:var(--navy)}.statusline{margin-top:12px;font-size:13px;color:#dbe7ed}
+.box{background:#fff;border:1px solid var(--line);border-radius:18px;padding:18px;margin-top:14px}
+.hidden{display:none!important}.error{background:#fdecea;border:1px solid #efc8c3;color:#842d28}
+.loading{color:var(--muted)}.top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.place{font-size:23px;font-weight:800}.muted{color:var(--muted);font-size:13px;margin-top:4px}
+.periods{display:flex;gap:7px;flex-wrap:wrap;margin-top:17px}.period{background:#edf2f5;padding:9px 13px;border-radius:999px;color:#33444f}
+.period.active{background:var(--navy);color:#fff}.recommend{margin-top:16px;padding:16px;border-radius:14px}
+.recommend.ok{background:var(--ok)}.recommend.warn{background:var(--warn)}.recommend.bad{background:var(--bad)}
+.rtitle{font-size:21px;font-weight:800}.rtext{margin-top:4px;font-size:14px;line-height:1.45}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}.card{border:1px solid var(--line);border-radius:14px;padding:14px}
+.label{font-size:11px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.04em}.value{font-size:26px;font-weight:800;margin-top:6px}
+.small{font-size:12px;color:var(--muted);margin-top:4px}.forecast{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}
+.day{border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center}.day b{display:block;font-size:17px;margin:5px 0}
+.chart{height:145px;display:flex;align-items:flex-end;gap:3px;border-bottom:1px solid var(--line);margin-top:12px}.barw{height:100%;flex:1;display:flex;align-items:flex-end}
+.bar{width:100%;min-height:2px;background:var(--blue);border-radius:3px 3px 0 0}.axis{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:6px}
+details{margin-top:14px}summary{font-weight:700;cursor:pointer}table{width:100%;border-collapse:collapse;margin-top:10px}td,th{padding:8px;border-bottom:1px solid var(--line);text-align:left;font-size:13px}
+td:last-child,th:last-child{text-align:right}.foot{font-size:11px;color:var(--muted);line-height:1.45;margin:15px 3px}
+.installhint{font-size:12px;color:#dbe7ed;margin-top:8px}
+@media(max-width:720px){.grid{grid-template-columns:repeat(2,1fr)}.forecast{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:480px){.wrap{padding-left:10px;padding-right:10px}.head{padding:20px 16px}h1{font-size:31px}form{display:grid}.grid{grid-template-columns:1fr 1fr}.forecast{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<section class="head">
+<h1>Gieß-Check</h1>
+<p class="lead">PLZ eingeben. Der Gieß-Check zeigt, wie viel es zuletzt geregnet hat und ob Trockenheit ein Thema sein könnte.</p>
+<form id="form">
+<input id="plz" maxlength="5" inputmode="numeric" pattern="[0-9]{5}" placeholder="PLZ, z. B. 72144" required>
+<button class="go" type="submit">Prüfen</button>
+</form>
+<div class="statusline" id="startup">Bereit zur PLZ-Eingabe</div>
+<div class="installhint" id="installHint">Auf dem iPhone: Safari → Teilen → Zum Home-Bildschirm.</div>
+</section>
+
+<div class="box error hidden" id="error"></div>
+<div class="box loading hidden" id="loading">Daten werden geladen …</div>
+
+<main id="main" class="hidden">
+<section class="box">
+<div class="top"><div><div class="place" id="place"></div><div class="muted" id="place2"></div></div></div>
+<div class="periods">
+<button type="button" class="period" data-days="7">7 Tage</button>
+<button type="button" class="period" data-days="14">14 Tage</button>
+<button type="button" class="period active" data-days="30">30 Tage</button>
+<button type="button" class="period" data-days="60">60 Tage</button>
+<button type="button" class="period" data-days="90">90 Tage</button>
+</div>
+
+<div id="recommend" class="recommend"><div class="rtitle" id="rtitle"></div><div class="rtext" id="rtext"></div></div>
+
+<div class="grid">
+<div class="card"><div class="label">Niederschlag</div><div class="value" id="total"></div><div class="small" id="avg"></div></div>
+<div class="card"><div class="label">Regentage</div><div class="value" id="wet"></div><div class="small">mindestens 1 mm</div></div>
+<div class="card"><div class="label">Letzter Regen</div><div class="value" id="last"></div><div class="small">mindestens 2 mm</div></div>
+<div class="card"><div class="label">Trockenphase</div><div class="value" id="dry"></div><div class="small">unter 1 mm pro Tag</div></div>
+<div class="card"><div class="label">Nächste 7 Tage</div><div class="value" id="future"></div><div class="small">Regenprognose</div></div>
+<div class="card"><div class="label">Min. nächste 3 Tage</div><div class="value" id="frost"></div><div class="small">Frostprüfung</div></div>
+</div>
+</section>
+
+<section class="box">
+<strong id="ctitle">Niederschlag</strong>
+<div id="chart" class="chart"></div>
+<div class="axis"><span id="from"></span><span id="to"></span></div>
+<details><summary>Tageswerte anzeigen</summary><div style="overflow:auto"><table><thead><tr><th>Datum</th><th>Regen</th></tr></thead><tbody id="tbody"></tbody></table></div></details>
+</section>
+
+<section class="box">
+<strong>Ausblick 7 Tage</strong>
+<div id="forecast" class="forecast" style="margin-top:12px"></div>
+</section>
+<div class="foot">Hinweis: Die Werte sind wettermodellbasierte Näherungen für den Mittelpunkt der PLZ. Lokale Regenmengen können abweichen. Bei gefrorenem Boden nicht gießen.</div>
+</main>
+</div>
+
+<script>
+(function(){
+"use strict";
+var state={days:30,weather:null,loc:null,plz:""};
+
+function el(id){return document.getElementById(id);}
+function show(id,on){el(id).classList.toggle("hidden",!on);}
+function safeGet(k){try{return window.localStorage?localStorage.getItem(k):null;}catch(e){return null;}}
+function safeSet(k,v){try{if(window.localStorage)localStorage.setItem(k,v);}catch(e){}}
+function de1(n){return Number(n).toLocaleString("de-DE",{minimumFractionDigits:1,maximumFractionDigits:1});}
+function dObj(s){return new Date(s+"T12:00:00");}
+function fmt(s){return dObj(s).toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit",year:"numeric"});}
+function todayISO(){var d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+
+window.onerror=function(msg,src,line){
+  show("loading",false);show("error",true);
+  el("error").textContent="Technischer Fehler: "+msg+" (Zeile "+line+").";
+};
+function error(msg){show("loading",false);show("error",true);el("error").textContent=msg;}
+function clearError(){show("error",false);}
+
+async function requestJSON(url,timeout){
+  var controller=new AbortController();
+  var timer=setTimeout(function(){controller.abort();},timeout||15000);
+  try{
+    var r=await fetch(url,{signal:controller.signal,cache:"no-store"});
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    return await r.json();
+  }finally{clearTimeout(timer);}
+}
+
+async function lookupPLZ(plz){
+  var z=await requestJSON("https://api.zippopotam.us/de/"+encodeURIComponent(plz),12000);
+  if(!z.places||!z.places.length)throw new Error("PLZ nicht gefunden");
+  var p=z.places[0];
+  return {name:p["place name"]||("PLZ "+plz),state:p.state||"",lat:parseFloat(p.latitude),lon:parseFloat(p.longitude)};
+}
+async function weather(lat,lon){
+  var vars="precipitation_sum,temperature_2m_min,temperature_2m_max";
+  var url="https://api.open-meteo.com/v1/forecast?latitude="+encodeURIComponent(lat)+"&longitude="+encodeURIComponent(lon)+
+  "&daily="+vars+"&timezone=Europe%2FBerlin&past_days=92&forecast_days=8";
+  return await requestJSON(url,16000);
+}
+function rows(){
+ var d=state.weather.daily,a=[];
+ for(var i=0;i<d.time.length;i++)a.push({date:d.time[i],rain:Number(d.precipitation_sum[i]||0),min:Number(d.temperature_2m_min[i]),max:Number(d.temperature_2m_max[i])});
+ return a;
+}
+function ago(s){
+ var diff=Math.round((dObj(todayISO())-dObj(s))/86400000);
+ if(diff===0)return "heute"; if(diff===1)return "gestern"; return "vor "+diff+" Tagen";
+}
+function render(){
+ var all=rows(),t=todayISO(),past=all.filter(x=>x.date<t),fc=all.filter(x=>x.date>=t).slice(0,7);
+ var sel=past.slice(-state.days),h30=past.slice(-30);
+ var total=sel.reduce((s,x)=>s+x.rain,0),wet=sel.filter(x=>x.rain>=1).length;
+ var last=[...sel].reverse().find(x=>x.rain>=2)||null;
+ var dry=0;for(var j=sel.length-1;j>=0;j--){if(sel[j].rain<1)dry++;else break;}
+ var f7=fc.reduce((s,x)=>s+x.rain,0),min3=fc.length?Math.min(...fc.slice(0,3).map(x=>x.min)):NaN;
+
+ el("place").textContent=state.loc.name;el("place2").textContent="PLZ "+state.plz+(state.loc.state?" · "+state.loc.state:"");
+ el("total").textContent=de1(total)+" mm";el("avg").textContent=de1(total/state.days)+" mm/Tag im Mittel";
+ el("wet").textContent=wet+" / "+state.days;el("last").textContent=last?ago(last.date):"> "+state.days+" Tage";
+ el("dry").textContent=dry+" "+(dry===1?"Tag":"Tage");el("future").textContent=de1(f7)+" mm";
+ el("frost").textContent=isFinite(min3)?de1(min3)+" °C":"–";
+ document.querySelectorAll(".period").forEach(b=>b.classList.toggle("active",Number(b.dataset.days)===state.days));
+
+ var total30=h30.reduce((s,x)=>s+x.rain,0),last30=[...h30].reverse().find(x=>x.rain>=2)||null;
+ var since=last30?Math.round((dObj(t)-dObj(last30.date))/86400000):99;
+ var month=(new Date()).getMonth()+1,winter=[11,12,1,2].includes(month);
+ var cls="ok",title="Aktuell kein besonderer Gießhinweis",text="In den letzten 30 Tagen fielen "+de1(total30)+" mm. Für die nächsten 7 Tage werden "+de1(f7)+" mm erwartet.";
+ if(isFinite(min3)&&min3<=0){cls="warn";title="Frost beachten";text="In den nächsten 3 Tagen werden bis zu "+de1(min3)+" °C erwartet. Bei gefrorenem Boden nicht gießen. In den letzten 30 Tagen fielen "+de1(total30)+" mm.";}
+ else{
+   var veryDry=winter?(total30<15||since>=20):(total30<25||since>=14);
+   var fairlyDry=winter?(total30<25||since>=14):(total30<40||since>=10);
+   if(veryDry&&f7<8){cls="bad";title="Gießen prüfen";text="In den letzten 30 Tagen fielen nur "+de1(total30)+" mm. Nennenswerter Regen war "+(last30?ago(last30.date):"im gesamten Zeitraum nicht")+". Für die nächsten 7 Tage sind "+de1(f7)+" mm angekündigt.";}
+   else if(fairlyDry){cls="warn";title="Eher trocken";text="In den letzten 30 Tagen fielen "+de1(total30)+" mm. Für die nächsten 7 Tage werden "+de1(f7)+" mm erwartet. Pflanzen und Kübel kontrollieren.";}
+ }
+ el("recommend").className="recommend "+cls;el("rtitle").textContent=title;el("rtext").textContent=text;
+ el("ctitle").textContent="Niederschlag – letzte "+state.days+" Tage";
+ var mx=Math.max(5,...sel.map(x=>x.rain));
+ el("chart").innerHTML=sel.map(x=>'<div class="barw" title="'+fmt(x.date)+': '+de1(x.rain)+' mm"><div class="bar" style="height:'+Math.max(2,Math.round(x.rain/mx*100))+'%"></div></div>').join("");
+ if(sel.length){el("from").textContent=fmt(sel[0].date);el("to").textContent=fmt(sel[sel.length-1].date);}
+ el("tbody").innerHTML=[...sel].reverse().map(x=>"<tr><td>"+fmt(x.date)+"</td><td>"+de1(x.rain)+" mm</td></tr>").join("");
+ el("forecast").innerHTML=fc.map((x,idx)=>'<div class="day"><span class="muted">'+(idx===0?"Heute":dObj(x.date).toLocaleDateString("de-DE",{weekday:"short"}))+'</span><b>'+de1(x.rain)+' mm</b><span class="muted">'+de1(x.min)+'° / '+de1(x.max)+'°</span></div>').join("");
+ show("main",true);
+}
+async function run(plz){
+ clearError();show("main",false);show("loading",true);el("startup").textContent="PLZ "+plz+" wird geprüft …";
+ try{
+   var loc=await lookupPLZ(plz);
+   if(!isFinite(loc.lat)||!isFinite(loc.lon))throw new Error("Keine Koordinaten zur PLZ erhalten");
+   var w=await weather(loc.lat,loc.lon);
+   if(!w.daily||!w.daily.time)throw new Error("Keine Wetterdaten erhalten");
+   state.plz=plz;state.loc=loc;state.weather=w;safeSet("giess_plz",plz);safeSet("giess_days",String(state.days));
+   render();el("startup").textContent="Daten erfolgreich geladen";
+ }catch(e){
+   error("Abruf nicht möglich: "+(e&&e.name==="AbortError"?"Zeitüberschreitung":(e&&e.message?e.message:String(e)))+". Bitte Internetverbindung prüfen.");
+   el("startup").textContent="Abruf fehlgeschlagen";
+ }finally{show("loading",false);}
+}
+el("form").addEventListener("submit",function(e){
+ e.preventDefault();var p=el("plz").value.replace(/\D/g,"").slice(0,5);el("plz").value=p;
+ if(!/^\d{5}$/.test(p)){error("Bitte eine gültige 5-stellige deutsche PLZ eingeben.");return;}run(p);
+});
+document.querySelectorAll(".period").forEach(function(b){b.addEventListener("click",function(){state.days=Number(b.dataset.days);safeSet("giess_days",String(state.days));if(state.weather)render();});});
+var sd=Number(safeGet("giess_days"));if([7,14,30,60,90].includes(sd))state.days=sd;
+var sp=safeGet("giess_plz");if(sp&&/^\d{5}$/.test(sp)){el("plz").value=sp;setTimeout(()=>run(sp),100);}
+if(window.matchMedia&&window.matchMedia("(display-mode: standalone)").matches){el("installHint").style.display="none";}
+
+if("serviceWorker" in navigator && location.protocol.startsWith("http")){
+  window.addEventListener("load",function(){navigator.serviceWorker.register("./service-worker.js").catch(function(){});});
+}
+})();
+</script>
+</body>
+</html>
