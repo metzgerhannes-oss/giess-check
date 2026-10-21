@@ -1,0 +1,37 @@
+name: Data API permissions policy
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+      - 'database/**'
+      - 'scripts/check_data_api_migrations.py'
+      - '.github/workflows/data-api-permissions.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+      - 'database/**'
+      - 'scripts/check_data_api_migrations.py'
+      - '.github/workflows/data-api-permissions.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sql-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Offline SQL migration permissions
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ -n "$BASE_SHA" ] && [[ ! "$BASE_SHA" =~ ^0+$ ]] && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            mapfile -t files < <(git diff --name-only --diff-filter=ACMR "$BASE_SHA" HEAD -- 'supabase/migrations/*.sql' 'database/*.sql')
+          else
+            mapfile -t files < <(git ls-files 'supabase/migrations/*.sql' 'database/*.sql')
+          fi
+          python3 scripts/check_data_api_migrations.py "${files[@]}"
