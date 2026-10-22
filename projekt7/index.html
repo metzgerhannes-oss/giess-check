@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#10233f">
+  <meta name="description" content="Entscheidungen nachvollziehbar abwägen – privat, kostenlos und offline.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Klarpunkt">
+  <title>Klarpunkt – Entscheidungen mit Durchblick</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./icon.svg">
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./app.mjs"></script>
+</head>
+<body>
+  <a class="skip-link" href="#workspace">Direkt zum Inhalt</a>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div><strong>Klarpunkt</strong><small>Dein privates Entscheidungslabor</small></div>
+      </div>
+      <span class="privacy"><span class="privacy-dot"></span> Privat · offlinefähig</span>
+    </header>
+    <main id="workspace">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">MEHR KLARHEIT, WENIGER BAUCHCHAOS</p>
+          <h1>Die Entscheidung bleibt bei dir.<br><em>Der Durchblick auch.</em></h1>
+          <p class="intro">Vergleiche Möglichkeiten, gewichte was wirklich zählt und prüfe, wie belastbar dein Ergebnis ist. Ohne Konto, Werbung oder Cloud.</p>
+        </div>
+        <div class="hero-actions">
+          <button id="new-project" class="button light" type="button">+ Neu beginnen</button>
+          <button id="load-example" class="button outline-light" type="button">Beispiel laden</button>
+        </div>
+      </section>
+      <div class="actionbar">
+        <div id="save-status" class="save-status" role="status" aria-live="polite">Daten bleiben auf deinem Gerät.</div>
+        <div class="actionbuttons">
+          <button id="export" class="button secondary" type="button">Sicherung speichern</button>
+          <button id="import" class="button secondary" type="button">Sicherung öffnen</button>
+          <input id="import-file" type="file" accept=".json,application/json" hidden>
+        </div>
+      </div>
+      <div class="columns">
+        <div class="editor">
+          <section class="panel">
+            <div class="section-head"><span class="step">01</span><div><h2>Worum geht es?</h2><p>Gib deiner Entscheidung einen Namen.</p></div></div>
+            <label class="field-label" for="project-title">Deine Frage</label>
+            <input id="project-title" class="title-input" type="text" maxlength="120" placeholder="Was möchtest du entscheiden?" autocomplete="off">
+          </section>
+          <section class="panel">
+            <div class="section-head"><span class="step">02</span><div><h2>Deine Möglichkeiten</h2><p>Mindestens zwei – maximal sechs.</p></div></div>
+            <div id="options" class="option-list"></div>
+            <button id="add-option" class="button add" type="button">+ Möglichkeit hinzufügen</button>
+          </section>
+          <section class="panel">
+            <div class="section-head"><span class="step">03</span><div><h2>Was zählt für dich?</h2><p>Bewerte jede Möglichkeit von 0 bis 10. Stelle die Wichtigkeit von 1 bis 5 ein.</p></div></div>
+            <div id="criteria" class="criteria-list"></div>
+            <button id="add-criterion" class="button add" type="button">+ Kriterium hinzufügen</button>
+          </section>
+        </div>
+        <aside class="insights" aria-label="Ergebnisauswertung">
+          <section class="panel result-panel">
+            <div class="result-topline"><span class="overline">DEIN VERGLEICH</span><span class="live-dot">LIVE</span></div>
+            <h2>Was spricht wofür?</h2>
+            <div id="results" aria-live="polite" aria-atomic="true"></div>
+            <div class="disclaimer">Hinweis: Die Ergebnisse sind Rechenhilfen, keine objektive Wahrheit. Die Robustheitsanzeige simuliert angenommene Schwankungen – sie ist keine Vorhersage.</div>
+            <button id="print" class="button print-button" type="button">Ergebnis drucken / als PDF</button>
+          </section>
+          <div class="aside-note"><strong>Wie funktioniert das?</strong><p>Jede Bewertung wird mit ihrer Wichtigkeit gewichtet. Zusätzlich rechnen wir viele kleine Veränderungen der Annahmen durch. So erkennst du, ob ein Ergebnis eindeutig oder knapp ist.</p></div>
+        </aside>
+      </div>
+    </main>
+    <footer class="footer"><span>Klarpunkt · Kostenlos, ohne Registrierung</span><span>Alles lokal. Du behältst die Kontrolle über deine Daten.</span></footer>
+  </div>
+</body>
+</html>
