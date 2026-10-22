@@ -1,6 +1,6 @@
 import {starterProject,blankProject,validateProject,evaluate,MAX_OPTIONS,MAX_CRITERIA} from './core.mjs';
 
-const STORAGE_KEY='klarpunkt.project.v1';
+const STORAGE_KEY='klarpunkt.project.v1'; // local-only data
 const byId=id=>document.getElementById(id);
 const status=byId('save-status');
 const make=(tag,className='',text='')=>{
