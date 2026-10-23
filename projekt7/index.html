@@ -49,6 +49,13 @@
           <input id="import-file" type="file" accept=".json,application/json" hidden>
         </div>
       </div>
+      <section class="panel archive" aria-labelledby="archive-heading">
+        <div class="archive-heading">
+          <div><h2 id="archive-heading">Gespeicherte Stände</h2><p>Zusätzliche lokale Kopien auf diesem Gerät. Für dauerhafte Sicherungen weiter die JSON-Datei verwenden.</p></div>
+          <button id="archive-save" class="button secondary" type="button">Stand ablegen</button>
+        </div>
+        <div id="archive-list" class="archive-list" role="list"></div>
+      </section>
       <div class="columns">
         <div class="editor">
           <section class="panel">

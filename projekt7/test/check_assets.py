@@ -19,7 +19,7 @@ assert manifest["start_url"] == "./index.html"
 assert manifest["scope"] == "./"
 assert manifest["display"] == "standalone"
 assert "fetch(request)" in sw
-assert 'storage.mjs' in sw and 'history.mjs' in sw, "Offline cache must include required app modules"
+assert 'storage.mjs' in sw and 'history.mjs' in sw and 'archive.mjs' in sw, "Offline cache must include required app modules"
 assert "import {inspectStorage,saveProject} from './storage.mjs'" in app
 assert "if(initial.state==='new')save(false);" in app, "Never overwrite corrupted storage at startup"
 
@@ -39,3 +39,6 @@ print("Projekt 7: offline assets, scope, HTML structure and manifest OK")
 
 assert 'id="undo"' in html and 'id="redo"' in html
 assert 'createHistory(project)' in app
+
+assert 'id="archive-save"' in html and 'id="archive-list"' in html
+assert "from './archive.mjs'" in app

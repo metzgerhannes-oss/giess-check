@@ -1,6 +1,7 @@
 import {starterProject,blankProject,validateProject,evaluate,MAX_OPTIONS,MAX_CRITERIA} from './core.mjs';
 import {inspectStorage,saveProject} from './storage.mjs';
 import {createHistory} from './history.mjs';
+import {readArchive,addSnapshot,removeSnapshot,ARCHIVE_CAP} from './archive.mjs';
 
 const byId=id=>document.getElementById(id);
 const status=byId('save-status');
@@ -16,6 +17,7 @@ const history=createHistory(project);
 let storageState=initial.state;
 let idCounter=0;
 
+function browserStore(){try{return window.localStorage;}catch{return null;}}
 function load(){
  try{return inspectStorage(window.localStorage);}
  catch{return inspectStorage(null);}
@@ -247,7 +249,48 @@ byId('import-file').addEventListener('change',async event=>{
   if(storageState==='ok')status.textContent='Sicherung erfolgreich eingelesen · lokal gespeichert';
  }catch(err){alert('Sicherung konnte nicht geöffnet werden: '+(err?.message||'ungültige Datei'));}
 });
+function renderArchive(){
+ const list=byId('archive-list'),store=browserStore(),state=readArchive(store);
+ list.replaceChildren();
+ const saveButton=byId('archive-save');
+ saveButton.disabled=state.state==='unavailable'||state.state==='damaged'||state.items.length>=ARCHIVE_CAP;
+ if(state.state==='unavailable'||state.state==='damaged'){
+  list.append(make('p','archive-warning',state.state==='damaged'
+   ?'Archivdaten beschädigt – unverändert belassen. Aktuelles Projekt bitte als Datei sichern.'
+   :'Lokale Archivierung nicht verfügbar. Aktuelles Projekt bitte als Datei sichern.'));
+  return;
+ }
+ if(!state.items.length){
+  list.append(make('p','archive-empty','Noch keine lokal abgelegten Stände.'));
+  return;
+ }
+ for(const item of state.items){
+  const row=make('div','archive-item');
+  row.setAttribute('role','listitem');
+  const info=make('div','archive-info');
+  info.append(make('strong','',item.project.title),make('small','',new Date(item.createdAt).toLocaleString('de-DE')));
+  const actions=make('div','archive-actions');
+  const open=elementButton('Öffnen','button secondary',()=>{
+   if(!confirm('Aktuellen Arbeitsstand durch diesen gespeicherten Stand ersetzen? Lade bei Bedarf vorher eine Datei-Sicherung herunter.'))return;
+   if(!replaceDamagedStorage())return;
+   project=validateProject(item.project);
+   changed();
+   status.textContent='Gespeicherten Stand geöffnet.';
+  },'Gespeicherten Stand öffnen: '+item.project.title);
+  const remove=elementButton('Entfernen','button secondary',()=>{
+   if(!confirm('Diesen gespeicherten Stand endgültig entfernen?'))return;
+   try{removeSnapshot(browserStore(),item.id);renderArchive();status.textContent='Gespeicherten Stand entfernt.';}
+   catch{status.textContent='Archiv konnte nicht geändert werden. Bestehende Daten bleiben erhalten.';}
+  },'Gespeicherten Stand entfernen: '+item.project.title);
+  actions.append(open,remove);row.append(info,actions);list.append(row);
+ }
+}
+byId('archive-save').addEventListener('click',()=>{
+ try{addSnapshot(browserStore(),project);renderArchive();status.textContent='Ein weiterer Stand wurde lokal gesichert.';}
+ catch(err){status.textContent=err?.message||'Lokales Archiv konnte nicht gespeichert werden.';}
+});
 renderAll();
+renderArchive();
 updateHistoryButtons();
 if(initial.state==='new')save(false);
 startupStatus();
