@@ -2,6 +2,7 @@ import {starterProject,blankProject,validateProject,evaluate,MAX_OPTIONS,MAX_CRI
 import {inspectStorage,saveProject} from './storage.mjs';
 import {createHistory} from './history.mjs';
 import {readArchive,addSnapshot,removeSnapshot,ARCHIVE_CAP} from './archive.mjs';
+import {serializeBackup,parseBackupText,MAX_BACKUP_BYTES} from './backup.mjs';
 
 const byId=id=>document.getElementById(id);
 const status=byId('save-status');
@@ -87,13 +88,14 @@ function renderOptions(){
  });
  byId('add-option').disabled=project.options.length>=MAX_OPTIONS;
 }
-function addSlider(parent,{title,min,max,value,onChange,step=1,format=x=>String(x),id}){
+function addSlider(parent,{title,min,max,value,onChange,step=1,format=x=>String(x),id,context=''}){
  const box=make('div','range-control');
  const label=make('label');label.htmlFor=id;
  const titleSpan=make('span','',title);const output=make('output','',format(value));
  output.htmlFor=id;label.append(titleSpan,output);
  const input=make('input');input.type='range';input.id=id;input.min=String(min);input.max=String(max);
  input.step=String(step);input.value=String(value);
+ input.setAttribute('aria-label',title+(context?' – '+context:''));
  input.addEventListener('input',()=>{
   const v=Number(input.value);output.textContent=format(v);onChange(v);save();renderResults();
  });
@@ -116,12 +118,12 @@ function renderCriteria(){
   const settings=make('div','control-row');
   addSlider(settings,{
    title:'Wichtigkeit',min:1,max:5,value:criterion.weight,
-   id:'weight-'+criterion.id,onChange:v=>{criterion.weight=v;},
+   id:'weight-'+criterion.id,context:criterion.name,onChange:v=>{criterion.weight=v;},
    format:v=>v+'/5'
   });
   addSlider(settings,{
    title:'Unsicherheit',min:0,max:3,value:criterion.uncertainty,
-   id:'uncertainty-'+criterion.id,onChange:v=>{criterion.uncertainty=v;},
+   id:'uncertainty-'+criterion.id,context:criterion.name,onChange:v=>{criterion.uncertainty=v;},
    format:v=>['keine','gering','mittel','hoch'][v]
   });
   card.append(settings);
@@ -132,6 +134,7 @@ function renderCriteria(){
    const id='rating-'+criterion.id+'-'+option.id;label.htmlFor=id;
    const range=make('input');range.type='range';range.min='0';range.max='10';range.step='1';
    range.id=id;range.value=String(criterion.ratings[option.id]??5);
+   range.setAttribute('aria-label','Bewertung: '+(option.name||'Möglichkeit '+(index+1))+' – '+criterion.name);
    const output=make('output','rating-value',range.value);output.htmlFor=id;
    range.addEventListener('input',()=>{
     criterion.ratings[option.id]=Number(range.value);output.textContent=range.value;save();renderResults();
@@ -228,7 +231,7 @@ byId('load-example').addEventListener('click',()=>{
 byId('print').addEventListener('click',()=>window.print());
 byId('export').addEventListener('click',()=>{
  try{
-  const data=JSON.stringify(validateProject(project),null,2);
+  const data=serializeBackup(project);
   const url=URL.createObjectURL(new Blob([data],{type:'application/json'}));
   const link=make('a');link.href=url;link.download='klarpunkt-sicherung-'+new Date().toISOString().slice(0,10)+'.json';
   document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
@@ -239,9 +242,9 @@ byId('import').addEventListener('click',()=>byId('import-file').click());
 byId('import-file').addEventListener('change',async event=>{
  const file=event.target.files?.[0];event.target.value='';
  if(!file)return;
- if(file.size>100000){alert('Datei zu groß (maximal 100 KB).');return;}
+ if(file.size>MAX_BACKUP_BYTES){alert('Datei zu groß (maximal 100 KB).');return;}
  try{
-  const input=validateProject(JSON.parse(await file.text()));
+  const input=parseBackupText(await file.text());
   if(!confirm('Aktuelle Entscheidung durch diese Sicherung ersetzen?'))return;
   if(!replaceDamagedStorage())return;
   project=input;

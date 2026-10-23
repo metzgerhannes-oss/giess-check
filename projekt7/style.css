@@ -11,3 +11,12 @@
 .archive-empty,.archive-warning{font-size:13px;color:var(--muted);margin:0}.archive-warning{color:#903c25}
 @media(max-width:640px){.archive{padding:16px;margin-bottom:12px}.archive-item{align-items:flex-start;flex-direction:column}.archive-actions{width:100%}.archive-actions .button{flex:1}}
 @media print{.archive{display:none!important}}
+
+.install-help{margin:0 0 16px;padding:13px 18px;border:1px solid var(--line);border-radius:13px;background:#fff}
+.install-help summary{font-weight:750;font-size:14px;color:#183d5a;cursor:pointer;min-height:44px;display:flex;align-items:center}
+.install-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px 18px;padding:8px 0}
+.install-grid p{margin:0;font-size:13px;color:#394d60;line-height:1.55}.install-grid strong{color:#20394e}
+input[type=range]{min-height:44px}
+@media(max-width:640px){.install-help{padding:9px 13px;margin-bottom:12px}.install-grid{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+@media(forced-colors:active){.bar-track,.bar-fill{border:1px solid CanvasText}.button,.icon-button{border:1px solid ButtonText}}

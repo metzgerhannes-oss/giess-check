@@ -11,7 +11,7 @@
   <title>Klarpunkt – Entscheidungen mit Durchblick</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="./icon.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
   <link rel="stylesheet" href="./style.css">
   <script type="module" src="./app.mjs"></script>
 </head>
@@ -49,6 +49,15 @@
           <input id="import-file" type="file" accept=".json,application/json" hidden>
         </div>
       </div>
+      <details class="install-help">
+        <summary>Als App installieren und offline verwenden</summary>
+        <div class="install-grid">
+          <p><strong>iPhone/iPad (Safari):</strong> Teilen → „Zum Home-Bildschirm“ → „Hinzufügen“. Danach vom Home-Bildschirm starten.</p>
+          <p><strong>Android/Chrome:</strong> Browsermenü → „App installieren“ oder „Zum Startbildschirm hinzufügen“.</p>
+          <p><strong>Desktop:</strong> Im Browsermenü „Installieren“ auswählen, falls angeboten. Für Offlinebetrieb einmal online vollständig öffnen.</p>
+          <p><strong>Datensicherung:</strong> Browserdaten können gelöscht werden. Vor Gerätewechsel JSON-Sicherung speichern und auf dem neuen Gerät öffnen.</p>
+        </div>
+      </details>
       <section class="panel archive" aria-labelledby="archive-heading">
         <div class="archive-heading">
           <div><h2 id="archive-heading">Gespeicherte Stände</h2><p>Zusätzliche lokale Kopien auf diesem Gerät. Für dauerhafte Sicherungen weiter die JSON-Datei verwenden.</p></div>

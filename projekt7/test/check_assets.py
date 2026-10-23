@@ -19,7 +19,7 @@ assert manifest["start_url"] == "./index.html"
 assert manifest["scope"] == "./"
 assert manifest["display"] == "standalone"
 assert "fetch(request)" in sw
-assert 'storage.mjs' in sw and 'history.mjs' in sw and 'archive.mjs' in sw, "Offline cache must include required app modules"
+assert 'storage.mjs' in sw and 'history.mjs' in sw and 'archive.mjs' in sw and 'backup.mjs' in sw, "Offline cache must include required app modules"
 assert "import {inspectStorage,saveProject} from './storage.mjs'" in app
 assert "if(initial.state==='new')save(false);" in app, "Never overwrite corrupted storage at startup"
 
@@ -44,3 +44,36 @@ assert 'id="archive-save"' in html and 'id="archive-list"' in html
 assert "from './archive.mjs'" in app
 
 assert (root / "test/browser-smoke.mjs").is_file(), "Missing milestone browser smoke"
+
+# PNG integrity and PWA installability (standard library only).
+import struct
+import zlib
+for filename, expected in [('apple-touch-icon.png',180),('icon-192.png',192),('icon-512.png',512)]:
+    data=(root / filename).read_bytes()
+    assert data[:8] == bytes([137,80,78,71,13,10,26,10]), filename
+    assert data[12:16] == b'IHDR', filename
+    assert struct.unpack('>IIBB',data[16:26])==(expected,expected,2,3), filename
+    offset=8
+    end=False
+    while offset<len(data):
+        size=struct.unpack('>I',data[offset:offset+4])[0]
+        tag=data[offset+4:offset+8]
+        payload=data[offset+8:offset+8+size]
+        crc=struct.unpack('>I',data[offset+8+size:offset+12+size])[0]
+        assert zlib.crc32(tag+payload)==crc, filename
+        offset+=12+size
+        if tag==b'IEND':
+            end=True
+            break
+    assert end and offset==len(data), filename
+assert 'href="./apple-touch-icon.png"' in html
+assert {'./icon-192.png','./icon-512.png'} <= {icon['src'] for icon in manifest['icons']}
+assert '<details class="install-help">' in html
+assert "from './backup.mjs'" in app
+def luminance(col):
+    values=[int(col[i:i+2],16)/255 for i in (1,3,5)]
+    linear=[v/12.92 if v<=0.04045 else ((v+0.055)/1.055)**2.4 for v in values]
+    return 0.2126*linear[0]+0.7152*linear[1]+0.0722*linear[2]
+for fg,bg in [('#1c2b3a','#ffffff'),('#536272','#ffffff'),('#a7e8d9','#1e4967'),('#394d60','#ffffff')]:
+    hi,lo=sorted((luminance(fg),luminance(bg)),reverse=True)
+    assert (hi+0.05)/(lo+0.05)>=4.5,(fg,bg)

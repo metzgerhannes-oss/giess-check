@@ -29,6 +29,7 @@ jobs:
           node --check projekt7/storage.mjs
           node --check projekt7/history.mjs
           node --check projekt7/archive.mjs
+          node --check projekt7/backup.mjs
           node --check projekt7/app.mjs
           node --check projekt7/sw.js
       - name: HTML, PWA asset references
