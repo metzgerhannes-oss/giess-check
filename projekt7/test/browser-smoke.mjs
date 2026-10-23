@@ -95,7 +95,7 @@ try{
  assert.equal(await evaluate("document.querySelector('link[rel=apple-touch-icon]').getAttribute('href')"),'./apple-touch-icon.png');
  assert.equal(await evaluate("document.querySelector('.install-help summary')!==null"),true);
  assert.equal(await evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),true,'Horizontal overflow on mobile');
- assert.equal(await evaluate("[...document.querySelectorAll('button:not(:disabled)')].every(b=>b.getBoundingClientRect().height>=40)"),true,'Touch targets under 40px');
+ assert.equal(await evaluate("[...document.querySelectorAll('button:not(:disabled)')].filter(b=>b.getClientRects().length>0).every(b=>b.getBoundingClientRect().height>=40)"),true,'Touch targets under 40px');
  await evaluate("document.querySelector('#project-title').value='Offline-Test';document.querySelector('#project-title').dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('#archive-save').click()");
  await until("document.querySelectorAll('.archive-item').length===1");
  assert.equal(await evaluate("JSON.parse(localStorage.getItem('klarpunkt.project.v1')).title"),'Offline-Test');
