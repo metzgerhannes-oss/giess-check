@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 
 const root=resolve(fileURLToPath(new URL('../',import.meta.url)));
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const mime={'.html':'text/html; charset=utf-8','.css':'text/css','.js':'text/javascript','.mjs':'text/javascript','.svg':'image/svg+xml','.webmanifest':'application/manifest+json'};
+const mime={'.html':'text/html; charset=utf-8','.css':'text/css','.js':'text/javascript','.mjs':'text/javascript','.svg':'image/svg+xml','.png':'image/png','.webmanifest':'application/manifest+json'};
 const candidates=[process.env.CHROME_BIN,'google-chrome','google-chrome-stable','chromium','chromium-browser'].filter(Boolean);
 const chrome=candidates.find(bin=>spawnSync(bin,['--version'],{stdio:'ignore'}).status===0);
 assert.ok(chrome,'Chrome/Chromium is required for this milestone test');
@@ -92,13 +92,34 @@ try{
  await send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5});
  await navigate(url);
  assert.equal(await evaluate("document.querySelectorAll('#results .rank-item').length>=2"),true);
+ assert.equal(await evaluate("document.querySelector('link[rel=apple-touch-icon]').getAttribute('href')"),'./apple-touch-icon.png');
+ assert.equal(await evaluate("document.querySelector('.install-help summary')!==null"),true);
  assert.equal(await evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),true,'Horizontal overflow on mobile');
  assert.equal(await evaluate("[...document.querySelectorAll('button:not(:disabled)')].every(b=>b.getBoundingClientRect().height>=40)"),true,'Touch targets under 40px');
  await evaluate("document.querySelector('#project-title').value='Offline-Test';document.querySelector('#project-title').dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('#archive-save').click()");
  await until("document.querySelectorAll('.archive-item').length===1");
  assert.equal(await evaluate("JSON.parse(localStorage.getItem('klarpunkt.project.v1')).title"),'Offline-Test');
  assert.equal(await evaluate("JSON.parse(localStorage.getItem('klarpunkt.archive.v1')).items[0].project.title"),'Offline-Test');
+ const exported=await evaluate(`(async()=>{
+  let blob=null;
+  const oldCreate=URL.createObjectURL,oldClick=HTMLAnchorElement.prototype.click;
+  URL.createObjectURL=value=>{blob=value;return 'blob:mock';};
+  HTMLAnchorElement.prototype.click=function(){window.__backupName=this.download;};
+  try{document.querySelector('#export').click();window.__exportedBackup=await blob.text();return window.__exportedBackup;}
+  finally{URL.createObjectURL=oldCreate;HTMLAnchorElement.prototype.click=oldClick;}
+ })()`);
+ assert.equal(JSON.parse(exported).title,'Offline-Test','UI export content incorrect');
+ assert.equal(await evaluate("window.__backupName.endsWith('.json')"),true);
  await evaluate("window.confirm=()=>true;document.querySelector('#new-project').click()");
+ await until("document.querySelector('#project-title').value==='Meine Entscheidung'");
+ await evaluate(`(()=>{
+  const file=new File([window.__exportedBackup],'restore.json',{type:'application/json'});
+  const transfer=new DataTransfer();transfer.items.add(file);
+  const input=document.querySelector('#import-file');input.files=transfer.files;
+  input.dispatchEvent(new Event('change',{bubbles:true}));
+ })()`);
+ await until("document.querySelector('#project-title').value==='Offline-Test'");
+ await evaluate("document.querySelector('#new-project').click()");
  await until("document.querySelector('#project-title').value==='Meine Entscheidung'");
  await evaluate("document.querySelector('.archive-actions button').click()");
  await until("document.querySelector('#project-title').value==='Offline-Test'");
@@ -111,7 +132,7 @@ try{
  assert.equal(await evaluate("document.querySelectorAll('#results .rank-item').length>=2"),true,'Offline module loading broken');
  assert.deepEqual(errors,[],'Uncaught browser exceptions');
  assert.deepEqual(external,[],'Unexpected external HTTP requests');
- console.log('Browser milestone PASS: mobile, touch, local storage, archive restore, offline navigation, JS exceptions, external requests');
+ console.log('Browser milestone PASS: mobile, touch, JSON export/import, archive restore, install assets, offline navigation, JS exceptions, external requests');
 }finally{
  for(const p of pending.values()){clearTimeout(p.timer);p.reject(new Error('Closing'));}pending.clear();
  if(ws)ws.close();
