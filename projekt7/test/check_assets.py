@@ -7,6 +7,7 @@ root = Path(__file__).resolve().parents[1]
 html = (root / "index.html").read_text(encoding="utf-8")
 manifest = json.loads((root / "manifest.webmanifest").read_text(encoding="utf-8"))
 sw = (root / "sw.js").read_text(encoding="utf-8")
+app = (root / "app.mjs").read_text(encoding="utf-8")
 
 assert '<html lang="de">' in html
 assert 'viewport-fit=cover' in html
@@ -18,6 +19,9 @@ assert manifest["start_url"] == "./index.html"
 assert manifest["scope"] == "./"
 assert manifest["display"] == "standalone"
 assert "fetch(request)" in sw
+assert 'storage.mjs' in sw, "Offline cache must include every required app module"
+assert "import {inspectStorage,saveProject} from './storage.mjs'" in app
+assert "if(initial.state==='new')save();" in app, "Never overwrite corrupted storage at startup"
 
 required = ["index.html", "style.css", "app.mjs", "core.mjs", "icon.svg",
             "manifest.webmanifest", "sw.js", "test/core.test.mjs"]
