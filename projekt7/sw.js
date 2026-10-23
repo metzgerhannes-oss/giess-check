@@ -1,5 +1,5 @@
-const VERSION='klarpunkt-shell-v2';
-const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./icon.svg','./manifest.webmanifest'];
+const VERSION='klarpunkt-shell-v3';
+const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./icon.svg','./manifest.webmanifest'];
 self.addEventListener('install',event=>{
  event.waitUntil(caches.open(VERSION).then(cache=>cache.addAll(FILES)).then(()=>self.skipWaiting()));
 });

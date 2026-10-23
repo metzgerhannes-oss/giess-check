@@ -19,9 +19,9 @@ assert manifest["start_url"] == "./index.html"
 assert manifest["scope"] == "./"
 assert manifest["display"] == "standalone"
 assert "fetch(request)" in sw
-assert 'storage.mjs' in sw, "Offline cache must include every required app module"
+assert 'storage.mjs' in sw and 'history.mjs' in sw, "Offline cache must include required app modules"
 assert "import {inspectStorage,saveProject} from './storage.mjs'" in app
-assert "if(initial.state==='new')save();" in app, "Never overwrite corrupted storage at startup"
+assert "if(initial.state==='new')save(false);" in app, "Never overwrite corrupted storage at startup"
 
 required = ["index.html", "style.css", "app.mjs", "core.mjs", "icon.svg",
             "manifest.webmanifest", "sw.js", "test/core.test.mjs"]
@@ -36,3 +36,6 @@ for path in re.findall(r"'(\./[^']+)'", sw):
         assert (root / path[2:]).exists(), f"Broken SW asset path: {path}"
 
 print("Projekt 7: offline assets, scope, HTML structure and manifest OK")
+
+assert 'id="undo"' in html and 'id="redo"' in html
+assert 'createHistory(project)' in app

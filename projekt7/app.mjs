@@ -1,5 +1,6 @@
 import {starterProject,blankProject,validateProject,evaluate,MAX_OPTIONS,MAX_CRITERIA} from './core.mjs';
 import {inspectStorage,saveProject} from './storage.mjs';
+import {createHistory} from './history.mjs';
 
 const byId=id=>document.getElementById(id);
 const status=byId('save-status');
@@ -11,6 +12,7 @@ const labelFor=(input,text)=>{
 };
 const initial=load();
 let project=initial.project;
+const history=createHistory(project);
 let storageState=initial.state;
 let idCounter=0;
 
@@ -18,7 +20,10 @@ function load(){
  try{return inspectStorage(window.localStorage);}
  catch{return inspectStorage(null);}
 }
-function save(){
+function updateHistoryButtons(){byId('undo').disabled=!history.canUndo();byId('redo').disabled=!history.canRedo();}
+function save(record=true){
+ if(record)history.push(project);
+ updateHistoryButtons();
  if(storageState==='damaged'){
   status.textContent='Gespeicherte Daten beschädigt. Nichts überschrieben – bitte zuerst eine Sicherung herunterladen oder bewusst neu beginnen.';
   return false;
@@ -178,6 +183,22 @@ function renderAll(){
  renderOptions();renderCriteria();renderResults();
 }
 function changed(){save();renderAll();}
+function restoreHistory(direction){
+ const snapshot=direction==='undo'?history.undo():history.redo();
+ if(!snapshot)return;
+ project=snapshot;save(false);renderAll();
+}
+byId('undo').addEventListener('click',()=>restoreHistory('undo'));
+byId('redo').addEventListener('click',()=>restoreHistory('redo'));
+document.addEventListener('keydown',event=>{
+ if(!(event.ctrlKey||event.metaKey)||event.altKey)return;
+ if(event.target instanceof Element&&event.target.closest('input,textarea,[contenteditable]'))return;
+ const key=event.key.toLowerCase();
+ if(key==='z'||key==='y'){
+  event.preventDefault();
+  restoreHistory(key==='y'||(key==='z'&&event.shiftKey)?'redo':'undo');
+ }
+});
 byId('project-title').addEventListener('input',e=>{project.title=e.target.value;save();});
 byId('add-option').addEventListener('click',()=>{
  if(project.options.length>=MAX_OPTIONS)return;
@@ -227,7 +248,8 @@ byId('import-file').addEventListener('change',async event=>{
  }catch(err){alert('Sicherung konnte nicht geöffnet werden: '+(err?.message||'ungültige Datei'));}
 });
 renderAll();
-if(initial.state==='new')save();
+updateHistoryButtons();
+if(initial.state==='new')save(false);
 startupStatus();
 if('serviceWorker' in navigator && location.protocol.startsWith('http')){
  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
