@@ -1,6 +1,7 @@
-const VERSION='klarpunkt-shell-v5';
+const VERSION='klarpunkt-shell-v6';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./archive.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 self.addEventListener('install',event=>{
+ // A failed precache prevents activation, preserving the previous complete shell.
  event.waitUntil(caches.open(VERSION).then(cache=>cache.addAll(FILES)).then(()=>self.skipWaiting()));
 });
 self.addEventListener('activate',event=>{
@@ -10,16 +11,17 @@ self.addEventListener('fetch',event=>{
  const request=event.request;
  if(request.method!=='GET')return;
  const url=new URL(request.url);
- if(url.origin!==self.location.origin||!url.pathname.startsWith(new URL(self.registration.scope).pathname))return;
+ const scope=new URL(self.registration.scope);
+ if(url.origin!==scope.origin||!url.pathname.startsWith(scope.pathname))return;
  if(request.mode==='navigate'){
-  event.respondWith(fetch(request).then(response=>{
-   if(response.ok){const copy=response.clone();caches.open(VERSION).then(cache=>cache.put('./index.html',copy)).catch(()=>{});}
-   return response;
-  }).catch(()=>caches.match('./index.html')));
+  const index=new URL('./index.html',scope);
+  // Version-pinned navigation prevents fresh HTML with stale cached JS/CSS.
+  if(url.pathname!==scope.pathname&&url.pathname!==index.pathname)return;
+  event.respondWith(caches.open(VERSION).then(cache=>cache.match('./index.html')).then(hit=>hit||fetch(request)));
   return;
  }
- event.respondWith(caches.match(request).then(hit=>hit||fetch(request).then(response=>{
-  if(response.ok){const copy=response.clone();caches.open(VERSION).then(cache=>cache.put(request,copy)).catch(()=>{});}
+ event.respondWith(caches.open(VERSION).then(cache=>cache.match(request).then(hit=>hit||fetch(request).then(response=>{
+  if(response.ok){const copy=response.clone();cache.put(request,copy).catch(()=>{});}
   return response;
- })));
+ }))));
 });

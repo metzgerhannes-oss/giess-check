@@ -20,3 +20,7 @@ input[type=range]{min-height:44px}
 @media(max-width:640px){.install-help{padding:9px 13px;margin-bottom:12px}.install-grid{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
 @media(forced-colors:active){.bar-track,.bar-fill{border:1px solid CanvasText}.button,.icon-button{border:1px solid ButtonText}}
+
+.conflict-reload:not([hidden]){border:2px solid #a83b2d;background:#fff3f1;color:#80251a;font-weight:800}
+[hidden]{display:none!important}
+@media print{.conflict-reload{display:none!important}}

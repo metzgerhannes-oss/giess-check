@@ -77,3 +77,10 @@ def luminance(col):
 for fg,bg in [('#1c2b3a','#ffffff'),('#536272','#ffffff'),('#a7e8d9','#1e4967'),('#394d60','#ffffff')]:
     hi,lo=sorted((luminance(fg),luminance(bg)),reverse=True)
     assert (hi+0.05)/(lo+0.05)>=4.5,(fg,bg)
+
+assert 'id="reload-storage"' in html
+assert 'STORAGE_CONFLICT' in (root / "storage.mjs").read_text(encoding="utf-8")
+assert "event.key===PRIMARY_KEY" in app
+assert "const VERSION='klarpunkt-shell-v6'" in sw
+assert "cache.match('./index.html')" in sw, "Version-consistent navigation required"
+assert "caches.open(VERSION).then(cache=>cache.match(request)" in sw, "Do not mix caches across apps"

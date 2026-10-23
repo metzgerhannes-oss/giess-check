@@ -1,5 +1,5 @@
 import {starterProject,blankProject,validateProject,evaluate,MAX_OPTIONS,MAX_CRITERIA} from './core.mjs';
-import {inspectStorage,saveProject} from './storage.mjs';
+import {inspectStorage,saveProject,PRIMARY_KEY} from './storage.mjs';
 import {createHistory} from './history.mjs';
 import {readArchive,addSnapshot,removeSnapshot,ARCHIVE_CAP} from './archive.mjs';
 import {serializeBackup,parseBackupText,MAX_BACKUP_BYTES} from './backup.mjs';
@@ -14,8 +14,9 @@ const labelFor=(input,text)=>{
 };
 const initial=load();
 let project=initial.project;
-const history=createHistory(project);
+let history=createHistory(project);
 let storageState=initial.state;
+let expectedPrimaryRaw=initial.primaryRaw;
 let idCounter=0;
 
 function browserStore(){try{return window.localStorage;}catch{return null;}}
@@ -24,24 +25,33 @@ function load(){
  catch{return inspectStorage(null);}
 }
 function updateHistoryButtons(){byId('undo').disabled=!history.canUndo();byId('redo').disabled=!history.canRedo();}
+function markConflict(){
+ storageState='conflict';
+ byId('reload-storage').hidden=false;
+ status.textContent='Anderer Tab hat Browserdaten geändert. Dieser Tab überschreibt nichts. Bitte erst Datei-Sicherung speichern oder den aktuellen Browserstand laden.';
+}
 function save(record=true){
  if(record)history.push(project);
  updateHistoryButtons();
+ if(storageState==='conflict'){markConflict();return false;}
  if(storageState==='damaged'){
   status.textContent='Gespeicherte Daten beschädigt. Nichts überschrieben – bitte zuerst eine Sicherung herunterladen oder bewusst neu beginnen.';
   return false;
  }
  try{
-  saveProject(window.localStorage,project,storageState==='recovered');
+  const clean=saveProject(window.localStorage,project,storageState==='recovered',expectedPrimaryRaw);
+  expectedPrimaryRaw=JSON.stringify(clean);
   storageState='ok';
   status.textContent='Automatisch gespeichert · nur auf diesem Gerät';
   return true;
  }catch(err){
+  if(err?.code==='STORAGE_CONFLICT'){markConflict();return false;}
   status.textContent='Speichern im Browser nicht möglich – bitte Sicherung herunterladen.';
   return false;
  }
 }
 function replaceDamagedStorage(){
+ if(storageState==='conflict'){markConflict();return false;}
  if(storageState!=='damaged')return true;
  if(!confirm('Die bisher gespeicherten Daten sind beschädigt. Mit dem Fortfahren werden die beschädigten Daten ersetzt. Nur fortfahren, wenn du eine verfügbare Sicherung geprüft hast.'))return false;
  storageState='recovered';
@@ -291,6 +301,27 @@ function renderArchive(){
 byId('archive-save').addEventListener('click',()=>{
  try{addSnapshot(browserStore(),project);renderArchive();status.textContent='Ein weiterer Stand wurde lokal gesichert.';}
  catch(err){status.textContent=err?.message||'Lokales Archiv konnte nicht gespeichert werden.';}
+});
+byId('reload-storage').addEventListener('click',()=>{
+ if(!confirm('Den neuesten Browserstand laden? Nicht gespeicherte Änderungen in diesem Tab gehen verloren. Speichere sie bei Bedarf zuerst als JSON-Datei.'))return;
+ const fresh=load();
+ if(fresh.state==='unavailable'){
+  status.textContent='Browser-Speicher nicht erreichbar. Bitte diesen Arbeitsstand als Datei sichern.';
+  return;
+ }
+ project=fresh.project;
+ history=createHistory(project);
+ storageState=fresh.state;
+ expectedPrimaryRaw=fresh.primaryRaw;
+ byId('reload-storage').hidden=true;
+ renderAll();
+ updateHistoryButtons();
+ status.textContent=fresh.state==='damaged'
+  ?'Browserdaten beschädigt. Nichts überschrieben. Bitte Sicherung als Datei speichern.'
+  :'Aktueller Browserstand geladen. Vorherige Änderungen dieses Tabs wurden nicht übernommen.';
+});
+window.addEventListener('storage',event=>{
+ if((event.key===PRIMARY_KEY||event.key===null)&&event.newValue!==expectedPrimaryRaw)markConflict();
 });
 renderAll();
 renderArchive();
