@@ -95,7 +95,7 @@ try{
  assert.equal(await evaluate("document.querySelector('link[rel=apple-touch-icon]').getAttribute('href')"),'./apple-touch-icon.png');
  assert.equal(await evaluate("document.querySelector('.install-help summary')!==null"),true);
  assert.equal(await evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),true,'Horizontal overflow on mobile');
- assert.equal(await evaluate("[...document.querySelectorAll('button:not(:disabled)')].every(b=>b.getBoundingClientRect().height>=40)"),true,'Touch targets under 40px');
+ assert.equal(await evaluate("[...document.querySelectorAll('button:not(:disabled)')].filter(b=>b.getClientRects().length>0).every(b=>b.getBoundingClientRect().height>=40)"),true,'Touch targets under 40px');
  await evaluate("document.querySelector('#project-title').value='Offline-Test';document.querySelector('#project-title').dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('#archive-save').click()");
  await until("document.querySelectorAll('.archive-item').length===1");
  assert.equal(await evaluate("JSON.parse(localStorage.getItem('klarpunkt.project.v1')).title"),'Offline-Test');
@@ -123,12 +123,26 @@ try{
  await until("document.querySelector('#project-title').value==='Meine Entscheidung'");
  await evaluate("document.querySelector('.archive-actions button').click()");
  await until("document.querySelector('#project-title').value==='Offline-Test'");
+ const conflict=await evaluate(`(()=>{
+  const key='klarpunkt.project.v1',before=localStorage.getItem(key);
+  const remote={...JSON.parse(before),title:'Parallel-Tab'};
+  const raw=JSON.stringify(remote);
+  localStorage.setItem(key,raw);
+  dispatchEvent(new StorageEvent('storage',{key,oldValue:before,newValue:raw,storageArea:localStorage,url:location.href}));
+  const field=document.querySelector('#project-title');field.value='Lokale Änderung';
+  field.dispatchEvent(new Event('input',{bubbles:true}));
+  return {persisted:JSON.parse(localStorage.getItem(key)).title,reloadVisible:!document.querySelector('#reload-storage').hidden};
+ })()`);
+ assert.deepEqual(conflict,{persisted:'Parallel-Tab',reloadVisible:true},'Concurrent tab must not be overwritten');
+ await evaluate("window.confirm=()=>true;document.querySelector('#reload-storage').click()");
+ await until("document.querySelector('#project-title').value==='Parallel-Tab'");
+ assert.equal(await evaluate("document.querySelector('#reload-storage').hidden"),true);
  await until("navigator.serviceWorker && navigator.serviceWorker.ready.then(()=>true)");
  await navigate(url);
  await until('!!navigator.serviceWorker.controller');
  await send('Network.emulateNetworkConditions',{offline:true,latency:0,downloadThroughput:0,uploadThroughput:0});
  await navigate(url);
- assert.equal(await evaluate("document.querySelector('#project-title').value"),'Offline-Test','Offline persistence broken');
+ assert.equal(await evaluate("document.querySelector('#project-title').value"),'Parallel-Tab','Offline persistence broken');
  assert.equal(await evaluate("document.querySelectorAll('#results .rank-item').length>=2"),true,'Offline module loading broken');
  assert.deepEqual(errors,[],'Uncaught browser exceptions');
  assert.deepEqual(external,[],'Unexpected external HTTP requests');

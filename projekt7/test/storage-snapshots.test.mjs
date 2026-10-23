@@ -59,3 +59,45 @@ test('unavailable browser storage does not crash startup',()=>{
  const broken={getItem(){throw new Error('denied')}};
  assert.equal(inspectStorage(broken).state,'unavailable');
 });
+
+test('optimistic save rejects stale tab without modifying primary or backup',()=>{
+ const store=memoryStore(),a=blankProject(),b=blankProject();
+ const first=inspectStorage(store);
+ assert.equal(first.primaryRaw,null);
+ a.title='Tab A';saveProject(store,a,false,first.primaryRaw);
+ const second=inspectStorage(store);
+ b.title='Tab B';saveProject(store,b,false,second.primaryRaw);
+ const before=store.dump();
+ a.title='Stale A';
+ assert.throws(()=>saveProject(store,a,false,second.primaryRaw),e=>e.code==='STORAGE_CONFLICT');
+ assert.deepEqual(store.dump(),before);
+ assert.equal(inspectStorage(store).project.title,'Tab B');
+});
+test('empty and deleted storage also require matching version',()=>{
+ const store=memoryStore(),p=blankProject();
+ saveProject(store,p);
+ const before=store.dump();
+ assert.throws(()=>saveProject(store,p,false,null),e=>e.code==='STORAGE_CONFLICT');
+ assert.deepEqual(store.dump(),before);
+ const empty=memoryStore();
+ assert.throws(()=>saveProject(empty,p,false,'stale'),e=>e.code==='STORAGE_CONFLICT');
+ assert.equal(empty.dump().size,0);
+});
+test('recovery override cannot bypass concurrency protection',()=>{
+ const store=memoryStore(),p=blankProject();
+ store.setItem(PRIMARY_KEY,'{damaged');
+ store.setItem(BACKUP_KEY,JSON.stringify(p));
+ const stale=inspectStorage(store);
+ assert.equal(stale.state,'recovered');
+ p.title='Newer';saveProject(store,p,true,stale.primaryRaw);
+ const before=store.dump();
+ assert.throws(()=>saveProject(store,p,true,stale.primaryRaw),e=>e.code==='STORAGE_CONFLICT');
+ assert.deepEqual(store.dump(),before);
+});
+test('read exposes exact raw primary version without writing',()=>{
+ const store=memoryStore();
+ assert.equal(inspectStorage(store).primaryRaw,null);
+ store.setItem(PRIMARY_KEY,'{broken');
+ assert.equal(inspectStorage(store).primaryRaw,'{broken');
+ assert.equal(inspectStorage(null).primaryRaw,undefined);
+});
