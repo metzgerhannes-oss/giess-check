@@ -1,6 +1,6 @@
 import {starterProject,blankProject,validateProject,evaluate,MAX_OPTIONS,MAX_CRITERIA} from './core.mjs';
+import {inspectStorage,saveProject} from './storage.mjs';
 
-const STORAGE_KEY='klarpunkt.project.v1'; // local-only data
 const byId=id=>document.getElementById(id);
 const status=byId('save-status');
 const make=(tag,className='',text='')=>{
@@ -9,23 +9,40 @@ const make=(tag,className='',text='')=>{
 const labelFor=(input,text)=>{
  const l=make('label','field-label',text);l.htmlFor=input.id;return l;
 };
-let project=load();
+const initial=load();
+let project=initial.project;
+let storageState=initial.state;
 let idCounter=0;
 
 function load(){
- try{
-  const raw=localStorage.getItem(STORAGE_KEY);
-  if(raw)return validateProject(JSON.parse(raw));
- }catch(err){ /* Broken or unavailable storage never prevents startup. */ }
- return starterProject();
+ try{return inspectStorage(window.localStorage);}
+ catch{return inspectStorage(null);}
 }
 function save(){
+ if(storageState==='damaged'){
+  status.textContent='Gespeicherte Daten beschädigt. Nichts überschrieben – bitte zuerst eine Sicherung herunterladen oder bewusst neu beginnen.';
+  return false;
+ }
  try{
-  localStorage.setItem(STORAGE_KEY,JSON.stringify(validateProject(project)));
+  saveProject(window.localStorage,project,storageState==='recovered');
+  storageState='ok';
   status.textContent='Automatisch gespeichert · nur auf diesem Gerät';
+  return true;
  }catch(err){
   status.textContent='Speichern im Browser nicht möglich – bitte Sicherung herunterladen.';
+  return false;
  }
+}
+function replaceDamagedStorage(){
+ if(storageState!=='damaged')return true;
+ if(!confirm('Die bisher gespeicherten Daten sind beschädigt. Mit dem Fortfahren werden die beschädigten Daten ersetzt. Nur fortfahren, wenn du eine verfügbare Sicherung geprüft hast.'))return false;
+ storageState='recovered';
+ return true;
+}
+function startupStatus(){
+ if(initial.state==='recovered')status.textContent='Lokale Sicherung wiederhergestellt. Bitte jetzt eine Sicherung als Datei speichern.';
+ else if(initial.state==='damaged')status.textContent='Lokale Daten beschädigt. Vorhandene Daten wurden nicht überschrieben.';
+ else if(initial.state==='unavailable')status.textContent='Browser-Speicher nicht verfügbar. Bitte Sicherung als Datei speichern.';
 }
 function uniqueId(prefix,list){
  let id;
@@ -177,10 +194,12 @@ byId('add-criterion').addEventListener('click',()=>{
 });
 byId('new-project').addEventListener('click',()=>{
  if(!confirm('Aktuelle Entscheidung ersetzen? Lade bei Bedarf vorher eine Sicherung herunter.'))return;
+ if(!replaceDamagedStorage())return;
  project=blankProject();changed();
 });
 byId('load-example').addEventListener('click',()=>{
  if(!confirm('Aktuelle Entscheidung durch das Beispiel ersetzen?'))return;
+ if(!replaceDamagedStorage())return;
  project=starterProject();changed();
 });
 byId('print').addEventListener('click',()=>window.print());
@@ -201,11 +220,15 @@ byId('import-file').addEventListener('change',async event=>{
  try{
   const input=validateProject(JSON.parse(await file.text()));
   if(!confirm('Aktuelle Entscheidung durch diese Sicherung ersetzen?'))return;
-  project=input;changed();
-  status.textContent='Sicherung erfolgreich eingelesen · lokal gespeichert';
+  if(!replaceDamagedStorage())return;
+  project=input;
+  changed();
+  if(storageState==='ok')status.textContent='Sicherung erfolgreich eingelesen · lokal gespeichert';
  }catch(err){alert('Sicherung konnte nicht geöffnet werden: '+(err?.message||'ungültige Datei'));}
 });
-renderAll();save();
+renderAll();
+if(initial.state==='new')save();
+startupStatus();
 if('serviceWorker' in navigator && location.protocol.startsWith('http')){
  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
 }
