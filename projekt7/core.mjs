@@ -40,8 +40,12 @@ export function validateProject(raw){
  const criteria=raw.criteria.map((c,i)=>{
   if(!c || typeof c!=="object" || typeof c.id!=="string" || !/^[a-zA-Z0-9_-]{1,40}$/.test(c.id) || criterionIds.has(c.id)) throw new Error("Ungültige Kriterien.");
   criterionIds.add(c.id);
-  const ratings={};
-  for(const option of options) ratings[option.id]=clamp(c.ratings?.[option.id],0,10);
+  // Object.fromEntries creates own data properties even for "__proto__".
+  // Never read inherited values from untrusted JSON rating dictionaries.
+  const ratings=Object.fromEntries(options.map(option=>[
+   option.id,clamp(c.ratings && Object.prototype.hasOwnProperty.call(c.ratings,option.id)
+    ?c.ratings[option.id]:undefined,0,10)
+  ]));
   return {id:c.id,name:clean(c.name)||`Kriterium ${i+1}`,weight:Math.round(clamp(c.weight,1,5)),uncertainty:Math.round(clamp(c.uncertainty,0,3)),ratings};
  });
  return {version:1,title:clean(raw.title,120)||"Meine Entscheidung",options,criteria};

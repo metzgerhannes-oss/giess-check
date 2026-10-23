@@ -42,3 +42,5 @@ assert 'createHistory(project)' in app
 
 assert 'id="archive-save"' in html and 'id="archive-list"' in html
 assert "from './archive.mjs'" in app
+
+assert (root / "test/browser-smoke.mjs").is_file(), "Missing milestone browser smoke"
