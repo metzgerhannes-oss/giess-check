@@ -20,7 +20,7 @@ assert manifest["scope"] == "./"
 assert manifest["display"] == "standalone"
 assert "fetch(request)" in sw
 assert 'storage.mjs' in sw and 'history.mjs' in sw and 'archive.mjs' in sw and 'backup.mjs' in sw, "Offline cache must include required app modules"
-assert "import {inspectStorage,saveProject} from './storage.mjs'" in app
+assert "import {inspectStorage,saveProject,PRIMARY_KEY} from './storage.mjs'" in app
 assert "if(initial.state==='new')save(false);" in app, "Never overwrite corrupted storage at startup"
 
 required = ["index.html", "style.css", "app.mjs", "core.mjs", "icon.svg",
