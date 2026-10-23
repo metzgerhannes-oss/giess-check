@@ -21,8 +21,8 @@ node --check projekt7/sw.js
 ```
 GitHub Actions: `.github/workflows/projekt7-checks.yml`.
 
-## Weitere Qualitätsarbeit
-Browser-E2E mit mobilem Viewport, Touch-/Fokusprüfung, reale Offline-Installation und geräteübergreifender Backup-/Restore-Test; Safari-PWA-App-Icon prüfen.
+## Browser-Meilenstein\nAuf Pull Requests mit dem Titelmarker `[milestone]` läuft zusätzlich ein isolierter Chromium-Smoke-Test ohne npm-Pakete und ohne externe Dienste: Mobilbreite, Touchflächen, lokale Datenhaltung, Archiv-Wiederherstellung, Service-Worker-Offline-Neustart und JavaScript-Laufzeitfehler. Andere PRs behalten das schnelle Pflicht-Gate.\n\n## Weitere Qualitätsarbeit
+Safari/iOS-PWA-Installation und geräteübergreifender Backup-/Restore-Test weiterhin offen; Chromium-Meilenstein deckt nicht Safari oder reale iPhone-Hardware ab.
 
 ## Kosten / Grenzen
 Statisches Hosting auf dem kostenlosen GitHub-Pages- oder Cloudflare-Pages-Tarif möglich, vorbehaltlich Tariflimits. Kein Geldbetrag, API-Zugang oder kostenpflichtiger Service im Code. Modell dient nur der Reflexion und ersetzt keine fachliche, finanzielle, medizinische oder rechtliche Beratung.

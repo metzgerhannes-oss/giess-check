@@ -33,3 +33,16 @@ jobs:
           node --check projekt7/sw.js
       - name: HTML, PWA asset references
         run: python3 projekt7/test/check_assets.py
+
+  browser_milestone:
+    if: github.event_name == 'pull_request' && contains(github.event.pull_request.title, '[milestone]')
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Headless Chromium mobile and offline smoke
+        run: node projekt7/test/browser-smoke.mjs

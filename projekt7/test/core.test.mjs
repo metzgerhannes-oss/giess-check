@@ -46,3 +46,23 @@ test('no undefined/NaN scores on malformed numeric fields',()=>{
  const p=blankProject();p.criteria[0].ratings.o1='bad';p.criteria[0].weight=NaN;
  assert.ok(evaluate(p).ranked.every(r=>Number.isFinite(r.score) && Number.isFinite(r.stability)));
 });
+
+test('reserved option identifiers cannot poison rating dictionaries or scores',()=>{
+ const p=blankProject();
+ p.options[0].id='__proto__';p.options[1].id='constructor';
+ for(const c of p.criteria)c.ratings=JSON.parse('{"__proto__":8,"constructor":3}');
+ const safe=validateProject(p);
+ assert.equal(Object.hasOwn(safe.criteria[0].ratings,'__proto__'),true);
+ assert.equal(safe.criteria[0].ratings.__proto__,8);
+ assert.equal(safe.criteria[0].ratings.constructor,3);
+ assert.ok(evaluate(p).ranked.every(v=>Number.isFinite(v.score)));
+ assert.equal({}.polluted,undefined);
+});
+test('inherited input rating keys never affect imported data',()=>{
+ const p=blankProject();p.options[0].id='toString';p.options[1].id='valueOf';
+ p.criteria[0].ratings={};
+ const safe=validateProject(p);
+ assert.equal(safe.criteria[0].ratings.toString,0);
+ assert.equal(safe.criteria[0].ratings.valueOf,0);
+ assert.ok(evaluate(p).ranked.every(v=>Number.isFinite(v.score)));
+});
