@@ -78,3 +78,7 @@ Der Service Worker aktiviert eine neue Offline-Version nur, wenn **alle** statis
 
 ## Sprint 16: verifizierte Offline-Shell
 Beim Installieren und Aktivieren prüft der Service Worker nicht nur, ob alle benötigten Dateien im Cache liegen, sondern auch HTTP-Erfolg, Weiterleitungen, Herkunft und passende MIME-Typen. Dadurch wird verhindert, dass z. B. eine irrtümlich als JavaScript ausgelieferte HTML-Seite eine funktionierende Offline-Version verdrängt. Isolierte Regressionen simulieren fehlerhafte Hosting-Antworten, Redirects, fremde URLs und beschädigte Caches. Ein vollständiger Browser-/Safari-Hardwaretest bleibt davon unabhängig.
+
+
+## Sprint 17: Laufzeit-Cache gegen beschädigte Inhalte absichern
+Nach der Installation wird nicht mehr nur die Vollständigkeit des Offline-Caches geprüft: Jeder Cache-Treffer für Module, Stylesheets und Grafiken wird vor der Auslieferung erneut anhand von URL, HTTP-Status, Redirect-Status, Response-Typ und MIME-Typ validiert. Ein ungültiger Treffer wird nicht ausgeführt, sondern nur durch eine vertrauenswürdige Netzantwort ersetzt. Laufzeit-Reparaturen verwenden dieselben Regeln wie der initiale Precache. Ein beschädigter HTML-Cache-Treffer wird bei Navigation bewusst mit einem Netzwerkfehler abgewiesen, statt potenziell fremdes HTML auszuführen. Zusätzliche isolierte Regressionen simulieren MIME-Verwechslungen, vergiftete Caches und Offline-Ausfälle. Bei komplett entferntem Browser-Cache ist eine erneute Online-Installation weiterhin erforderlich; echte Safari-Hardware bleibt ungeprüft.
