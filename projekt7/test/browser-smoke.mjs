@@ -113,7 +113,16 @@ try{
   c.value='K'.repeat(80);c.dispatchEvent(new Event('input',{bubbles:true}));
  })()`);
  await sleep(120);
- assert.equal(await evaluate("document.documentElement.scrollWidth<=document.documentElement.clientWidth+1"),true,'Horizontal overflow at desktop 400% zoom with long labels');
+ const zoomOverflow=await evaluate(`(()=>{
+  const vw=document.documentElement.clientWidth;
+  return {viewport:vw,scroll:document.documentElement.scrollWidth,
+   offenders:[...document.querySelectorAll('body *')].filter(el=>{
+    const rect=el.getBoundingClientRect();return rect.right>vw+1||rect.left< -1;
+   }).slice(0,16).map(el=>({tag:el.tagName,cls:el.className,
+    width:Math.round(el.getBoundingClientRect().width),
+    right:Math.round(el.getBoundingClientRect().right)}))};
+ })()`);
+ assert.ok(zoomOverflow.scroll<=zoomOverflow.viewport+1,'Horizontal overflow at desktop 400% zoom: '+JSON.stringify(zoomOverflow));
  assert.equal(await evaluate("getComputedStyle(document.querySelector('.archive-tools')).gridTemplateColumns!=='none'"),true,'Archive controls do not reflow at 400% zoom');
  assert.equal(await evaluate("document.querySelector('#archive-save').getBoundingClientRect().height>=40"),true,'Archive control too small at 400% zoom');
  await evaluate("window.confirm=()=>true;document.querySelector('#load-example').click()");
