@@ -14,7 +14,9 @@ const candidates=[process.env.CHROME_BIN,'google-chrome','google-chrome-stable',
 const chrome=candidates.find(bin=>spawnSync(bin,['--version'],{stdio:'ignore'}).status===0);
 assert.ok(chrome,'Chrome/Chromium is required for this milestone test');
 const profile=await mkdtemp(join(tmpdir(),'projekt7-browser-'));
-let browser,ws,server;
+let browser,ws,ws2,server;
+let workerOverride=null;
+const pending2=new Map();
 const pending=new Map(),errors=[],external=[];
 let nextId=0;
 function send(method,params={}){
@@ -55,7 +57,7 @@ try{
    if(!(await stat(file)).isFile()){res.writeHead(404).end();return;}
    const ext=file.slice(file.lastIndexOf('.'));
    res.writeHead(200,{'Content-Type':mime[ext]||'application/octet-stream','Cache-Control':'no-store'});
-   res.end(await readFile(file));
+   res.end(relative==='sw.js'&&workerOverride!==null?workerOverride:await readFile(file));
   }catch{res.writeHead(404).end();}
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -137,18 +139,86 @@ try{
  await evaluate("window.confirm=()=>true;document.querySelector('#reload-storage').click()");
  await until("document.querySelector('#project-title').value==='Parallel-Tab'");
  assert.equal(await evaluate("document.querySelector('#reload-storage').hidden"),true);
+
+ // Two genuine Chrome tabs: verify native storage events and independent editors.
+ const newTab=await send('Target.createTarget',{url});
+ const allTargets=await (await fetch('http://127.0.0.1:'+port+'/json/list')).json();
+ const tabTarget=allTargets.find(t=>t.id===newTab.targetId);
+ assert.ok(tabTarget,'Second Chrome tab missing');
+ ws2=new WebSocket(tabTarget.webSocketDebuggerUrl);
+ await new Promise((resolve,reject)=>{ws2.addEventListener('open',resolve,{once:true});ws2.addEventListener('error',reject,{once:true});});
+ let next2=0;
+ function send2(method,params={}){
+  return new Promise((resolve,reject)=>{
+   const id=++next2,timer=setTimeout(()=>{pending2.delete(id);reject(new Error('Second tab timeout: '+method));},12000);
+   pending2.set(id,{resolve,reject,timer});ws2.send(JSON.stringify({id,method,params}));
+  });
+ }
+ ws2.addEventListener('message',event=>{
+  const msg=JSON.parse(event.data);
+  if(msg.id){
+   const p=pending2.get(msg.id);if(!p)return;
+   pending2.delete(msg.id);clearTimeout(p.timer);
+   msg.error?p.reject(new Error(JSON.stringify(msg.error))):p.resolve(msg.result);
+  }
+  if(msg.method==='Runtime.exceptionThrown')errors.push('Second tab: '+msg.params.exceptionDetails.text);
+ });
+ await send2('Runtime.enable');
+ async function eval2(expression){
+  const result=await send2('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});
+  if(result.exceptionDetails)throw new Error('Second tab exception: '+result.exceptionDetails.text);
+  return result.result?.value;
+ }
+ async function wait2(expression){
+  const started=Date.now();
+  while(Date.now()-started<12000){try{if(await eval2(expression))return;}catch{}await sleep(120);}
+  throw new Error('Second tab timed out: '+expression);
+ }
+ await wait2("document.readyState==='complete' && !!document.querySelector('#results .rank-item')");
+ await eval2("document.querySelector('#project-title').value='Echter Zweittab';document.querySelector('#project-title').dispatchEvent(new Event('input',{bubbles:true}))");
+ await until("!document.querySelector('#reload-storage').hidden");
+ assert.equal(await evaluate("JSON.parse(localStorage.getItem('klarpunkt.project.v1')).title"),'Echter Zweittab');
+ await evaluate("document.querySelector('#project-title').value='Veralteter Ersttab';document.querySelector('#project-title').dispatchEvent(new Event('input',{bubbles:true}))");
+ assert.equal(await evaluate("JSON.parse(localStorage.getItem('klarpunkt.project.v1')).title"),'Echter Zweittab','Concurrent write lost data');
+ await evaluate("window.confirm=()=>true;document.querySelector('#reload-storage').click()");
+ await until("document.querySelector('#project-title').value==='Echter Zweittab'");
+ await evaluate("document.querySelector('#project-title').value='Ersttab neu';document.querySelector('#project-title').dispatchEvent(new Event('input',{bubbles:true}))");
+ await wait2("!document.querySelector('#reload-storage').hidden");
+ await eval2("document.querySelector('#project-title').value='Veralteter Zweittab';document.querySelector('#project-title').dispatchEvent(new Event('input',{bubbles:true}))");
+ assert.equal(await eval2("JSON.parse(localStorage.getItem('klarpunkt.project.v1')).title"),'Ersttab neu');
+ await eval2("window.confirm=()=>true;document.querySelector('#reload-storage').click()");
+ await wait2("document.querySelector('#project-title').value==='Ersttab neu'");
+ await eval2("document.querySelector('#archive-save').click()");
+ await until("document.querySelectorAll('.archive-item').length===2");
+ assert.equal(await evaluate("JSON.parse(localStorage.getItem('klarpunkt.archive.v1')).items.length"),2);
+ await send('Target.closeTarget',{targetId:newTab.targetId});
+ ws2.close();ws2=null;
  await until("navigator.serviceWorker && navigator.serviceWorker.ready.then(()=>true)");
  await navigate(url);
  await until('!!navigator.serviceWorker.controller');
  await send('Network.emulateNetworkConditions',{offline:true,latency:0,downloadThroughput:0,uploadThroughput:0});
  await navigate(url);
- assert.equal(await evaluate("document.querySelector('#project-title').value"),'Parallel-Tab','Offline persistence broken');
+ assert.equal(await evaluate("document.querySelector('#project-title').value"),'Ersttab neu','Offline persistence broken');
  assert.equal(await evaluate("document.querySelectorAll('#results .rank-item').length>=2"),true,'Offline module loading broken');
+
+ // Simulate a deployment and verify the new shell survives a cold offline reload.
+ await send('Network.emulateNetworkConditions',{offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1});
+ const sourceWorker=await readFile(join(root,'sw.js'),'utf8');
+ workerOverride=sourceWorker.replace("'klarpunkt-shell-v7'","'klarpunkt-shell-v7-smoke'");
+ assert.notEqual(workerOverride,sourceWorker,'Worker version marker missing');
+ await evaluate("navigator.serviceWorker.ready.then(reg=>reg.update().then(()=>true))");
+ await until("caches.keys().then(keys=>keys.includes('klarpunkt-shell-v7-smoke')&&!keys.includes('klarpunkt-shell-v7'))");
+ await send('Network.emulateNetworkConditions',{offline:true,latency:0,downloadThroughput:0,uploadThroughput:0});
+ await navigate(url);
+ assert.equal(await evaluate("document.querySelector('#project-title').value"),'Ersttab neu','Offline update lost local state');
+ assert.equal(await evaluate("document.querySelectorAll('#results .rank-item').length>=2"),true,'Offline update missing app modules');
  assert.deepEqual(errors,[],'Uncaught browser exceptions');
  assert.deepEqual(external,[],'Unexpected external HTTP requests');
- console.log('Browser milestone PASS: mobile, touch, JSON export/import, archive restore, install assets, offline navigation, JS exceptions, external requests');
+ console.log('Browser milestone PASS: mobile, touch, backup, genuine multi-tab, archive sync, offline upgrade, JS exceptions, external requests');
 }finally{
  for(const p of pending.values()){clearTimeout(p.timer);p.reject(new Error('Closing'));}pending.clear();
+ for(const p of pending2.values()){clearTimeout(p.timer);p.reject(new Error('Closing'));}pending2.clear();
+ if(ws2)ws2.close();
  if(ws)ws.close();
  if(browser){browser.kill('SIGTERM');await sleep(150);if(browser.exitCode===null)browser.kill('SIGKILL');}
  if(server)await new Promise(resolve=>server.close(resolve));
