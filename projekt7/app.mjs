@@ -1,5 +1,5 @@
 import {starterProject,blankProject,validateProject,evaluate,MAX_OPTIONS,MAX_CRITERIA} from './core.mjs';
-import {inspectStorage,saveProject,PRIMARY_KEY} from './storage.mjs';
+import {inspectStorage,saveProject,inspectPrimaryRevision,PRIMARY_KEY} from './storage.mjs';
 import {createHistory} from './history.mjs';
 import {createUnsavedGuard} from './unsaved.mjs';
 import {readArchive,addSnapshot,removeSnapshot,ARCHIVE_CAP,ARCHIVE_KEY} from './archive.mjs';
@@ -42,6 +42,13 @@ function save(record=true){
  if(storageState==='conflict'){markConflict();return false;}
  if(storageState==='damaged'){
   status.textContent='Ungespeicherte Änderungen! Vorhandene Browserdaten beschädigt und unverändert. Bitte eine JSON-Sicherung herunterladen.';
+  return false;
+ }
+ // If the primary could not be read at startup, never overwrite an unknown
+ // existing revision when storage becomes available later.
+ if(expectedPrimaryRaw===undefined){
+  status.textContent='Ungespeicherte Änderungen! Browserstand nicht geprüft. Bitte zuerst als JSON-Datei sichern und anschließend den Browserstand neu laden.';
+  byId('reload-storage').hidden=false;
   return false;
  }
  try{
@@ -377,6 +384,24 @@ byId('reload-storage').addEventListener('click',()=>{
  status.textContent=fresh.state==='damaged'
   ?'Browserdaten beschädigt. Nichts überschrieben. Bitte Sicherung als Datei speichern.'
   :'Aktueller Browserstand geladen. Vorherige Änderungen dieses Tabs wurden nicht übernommen.';
+});
+// Frozen/backgrounded tabs can miss storage events. Recheck without modifying
+// either key when the page returns to the foreground.
+function reconcileOnReturn(){
+ const revision=inspectPrimaryRevision(browserStore(),expectedPrimaryRaw);
+ if(storageState!=='conflict'&&(revision==='changed'||revision==='unverified'))markConflict();
+ else if(revision==='unavailable'&&unsavedGuard.isDirty()&&storageState!=='conflict'){
+  status.textContent='Ungespeicherte Änderungen! Browser-Speicher derzeit nicht lesbar. Bitte JSON-Sicherung herunterladen.';
+ }
+ const archive=readArchive(browserStore());
+ if(archive.state==='unavailable'||archive.state==='damaged'){
+  if(expectedArchiveRaw!==undefined)renderArchive();
+ }else if(archive.raw!==expectedArchiveRaw)renderArchive();
+}
+window.addEventListener('focus',reconcileOnReturn);
+window.addEventListener('pageshow',reconcileOnReturn);
+document.addEventListener('visibilitychange',()=>{
+ if(document.visibilityState==='visible')reconcileOnReturn();
 });
 window.addEventListener('storage',event=>{
  if((event.key===PRIMARY_KEY||event.key===null)&&event.newValue!==expectedPrimaryRaw)markConflict();
