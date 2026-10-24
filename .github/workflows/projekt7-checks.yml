@@ -28,6 +28,7 @@ jobs:
           node --check projekt7/core.mjs
           node --check projekt7/storage.mjs
           node --check projekt7/history.mjs
+          node --check projekt7/unsaved.mjs
           node --check projekt7/archive.mjs
           node --check projekt7/archive-transfer.mjs
           node --check projekt7/backup.mjs

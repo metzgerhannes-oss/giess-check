@@ -1,12 +1,14 @@
 import {starterProject,blankProject,validateProject,evaluate,MAX_OPTIONS,MAX_CRITERIA} from './core.mjs';
 import {inspectStorage,saveProject,PRIMARY_KEY} from './storage.mjs';
 import {createHistory} from './history.mjs';
+import {createUnsavedGuard} from './unsaved.mjs';
 import {readArchive,addSnapshot,removeSnapshot,ARCHIVE_CAP,ARCHIVE_KEY} from './archive.mjs';
 import {serializeBackup,parseBackupText,MAX_BACKUP_BYTES} from './backup.mjs';
 import {serializeArchiveBackup,parseArchiveBackup,importArchiveBackup,MAX_ARCHIVE_FILE_BYTES} from './archive-transfer.mjs';
 
 const byId=id=>document.getElementById(id);
 const status=byId('save-status');
+const unsavedGuard=createUnsavedGuard(window);
 const make=(tag,className='',text='')=>{
  const e=document.createElement(tag);if(className)e.className=className;if(text!==undefined)e.textContent=text;return e;
 };
@@ -35,20 +37,22 @@ function markConflict(){
 function save(record=true){
  if(record)history.push(project);
  updateHistoryButtons();
+ unsavedGuard.setDirty(true);
  if(storageState==='conflict'){markConflict();return false;}
  if(storageState==='damaged'){
-  status.textContent='Gespeicherte Daten beschädigt. Nichts überschrieben – bitte zuerst eine Sicherung herunterladen oder bewusst neu beginnen.';
+  status.textContent='Ungespeicherte Änderungen! Vorhandene Browserdaten beschädigt und unverändert. Bitte eine JSON-Sicherung herunterladen.';
   return false;
  }
  try{
   const clean=saveProject(window.localStorage,project,storageState==='recovered',expectedPrimaryRaw);
   expectedPrimaryRaw=JSON.stringify(clean);
   storageState='ok';
+  unsavedGuard.setDirty(false);
   status.textContent='Automatisch gespeichert · nur auf diesem Gerät';
   return true;
  }catch(err){
   if(err?.code==='STORAGE_CONFLICT'){markConflict();return false;}
-  status.textContent='Speichern im Browser nicht möglich – bitte Sicherung herunterladen.';
+  status.textContent='Ungespeicherte Änderungen! Browser-Speichern nicht möglich – bitte eine JSON-Sicherung herunterladen.';
   return false;
  }
 }
@@ -199,7 +203,7 @@ function renderAll(){
  byId('project-title').value=project.title;
  renderOptions();renderCriteria();renderResults();
 }
-function changed(){save();renderAll();}
+function changed(){const persisted=save();renderAll();return persisted;}
 function restoreHistory(direction){
  const snapshot=direction==='undo'?history.undo():history.redo();
  if(!snapshot)return;
@@ -260,8 +264,7 @@ byId('import-file').addEventListener('change',async event=>{
   if(!confirm('Aktuelle Entscheidung durch diese Sicherung ersetzen?'))return;
   if(!replaceDamagedStorage())return;
   project=input;
-  changed();
-  if(storageState==='ok')status.textContent='Sicherung erfolgreich eingelesen · lokal gespeichert';
+  if(changed())status.textContent='Sicherung erfolgreich eingelesen · lokal gespeichert';
  }catch(err){alert('Sicherung konnte nicht geöffnet werden: '+(err?.message||'ungültige Datei'));}
 });
 function renderArchive(){
@@ -290,8 +293,7 @@ function renderArchive(){
    if(!confirm('Aktuellen Arbeitsstand durch diesen gespeicherten Stand ersetzen? Lade bei Bedarf vorher eine Datei-Sicherung herunter.'))return;
    if(!replaceDamagedStorage())return;
    project=validateProject(item.project);
-   changed();
-   status.textContent='Gespeicherten Stand geöffnet.';
+   if(changed())status.textContent='Gespeicherten Stand geöffnet und lokal gespeichert.';
   },'Gespeicherten Stand öffnen: '+item.project.title);
   const remove=elementButton('Entfernen','button secondary',()=>{
    if(!confirm('Diesen gespeicherten Stand endgültig entfernen?'))return;
@@ -345,6 +347,7 @@ byId('reload-storage').addEventListener('click',()=>{
  }
  project=fresh.project;
  history=createHistory(project);
+ unsavedGuard.setDirty(false);
  storageState=fresh.state;
  expectedPrimaryRaw=fresh.primaryRaw;
  byId('reload-storage').hidden=true;
