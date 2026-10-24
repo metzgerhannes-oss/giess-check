@@ -13,7 +13,18 @@ function trustedShellAsset(response,path){
  if(!response||!response.ok||response.status!==200||response.redirected||
     (response.type!=='basic'&&response.type!=='default'))return false;
  if(response.url!==new URL(path,self.registration.scope).href)return false;
- const type=response.headers?.get('content-type')?.split(';')[0]?.trim().toLowerCase();
+ // Shell resources must be public, complete, and safe to persist offline.
+ // Reject responses that explicitly prohibit storage, depend on an unbounded
+ // Vary key, represent partial content, or are marked as downloads.
+ const headers=response.headers;
+ const cacheControl=headers?.get('cache-control')||'';
+ if(/(?:^|,)\s*no-store(?:\s*(?:,|$))/i.test(cacheControl))return false;
+ const vary=headers?.get('vary')||'';
+ if(vary.split(',').some(value=>value.trim()==='*'))return false;
+ if(/^\s*bytes\s+\d+-\d+\/(?:\d+|\*)/i.test(headers?.get('content-range')||''))return false;
+ if(/^\s*attachment(?:\s*;|$)/i.test(headers?.get('content-disposition')||''))return false;
+ if(/^\s*0\s*$/.test(headers?.get('content-length')||''))return false;
+ const type=headers?.get('content-type')?.split(';')[0]?.trim().toLowerCase();
  const kind=path==='./'||path.endsWith('.html')?'html':
    path.endsWith('.mjs')||path.endsWith('.js')?'js':
    path.endsWith('.css')?'css':path.endsWith('.svg')?'svg':
@@ -58,6 +69,9 @@ self.addEventListener('activate',event=>{
 self.addEventListener('fetch',event=>{
  const request=event.request;
  if(request.method!=='GET')return;
+ // Do not collapse authenticated or byte-range requests into a public
+ // uncredentialed shell-cache response. Let the network handle them.
+ if(request.headers?.has?.('authorization')||request.headers?.has?.('range'))return;
  const url=new URL(request.url);
  const scope=new URL(self.registration.scope);
  if(url.origin!==scope.origin||!url.pathname.startsWith(scope.pathname))return;
