@@ -81,7 +81,7 @@ for fg,bg in [('#1c2b3a','#ffffff'),('#536272','#ffffff'),('#a7e8d9','#1e4967'),
 assert 'id="reload-storage"' in html
 assert 'STORAGE_CONFLICT' in (root / "storage.mjs").read_text(encoding="utf-8")
 assert "event.key===PRIMARY_KEY" in app
-assert "const VERSION='klarpunkt-shell-v10'" in sw
+assert "const VERSION='klarpunkt-shell-v11'" in sw
 assert "cache.match('./index.html')" in sw, "Version-consistent navigation required"
 assert "caches.open(VERSION).then(cache=>cache.match(request)" in sw, "Do not mix caches across apps"
 
@@ -101,3 +101,14 @@ assert "github.event_name == 'push'" in (root.parent / ".github/workflows/projek
 assert "prefers-contrast:more" in (root / "style.css").read_text(encoding="utf-8")
 assert "onBackupFailure" in (root / "storage.mjs").read_text(encoding="utf-8")
 assert "backupWarning" in app
+
+# Reflow and print accessibility invariants; rendered width checked in Chromium milestone.
+css=(root / "style.css").read_text(encoding="utf-8")
+assert 'id="workspace" tabindex="-1"' in html
+assert 'id="print-project-title"' in html
+assert "window.addEventListener('beforeprint',updatePrintHeading)" in app
+assert '@media(max-width:380px)' in css
+assert '.insights{order:initial}' in css
+assert '.print-project-title{display:block' in css
+assert '@media(prefers-reduced-motion:reduce)' in css
+assert '@media(forced-colors:active)' in css

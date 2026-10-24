@@ -260,7 +260,12 @@ byId('load-example').addEventListener('click',()=>{
  if(!replaceDamagedStorage())return;
  project=starterProject();changed();
 });
-byId('print').addEventListener('click',()=>window.print());
+function updatePrintHeading(){
+ const title=(project.title||'').trim()||'Ohne Titel';
+ byId('print-project-title').textContent=title+' · Stand: '+new Date().toLocaleDateString('de-DE');
+}
+window.addEventListener('beforeprint',updatePrintHeading);
+byId('print').addEventListener('click',()=>{updatePrintHeading();window.print();});
 byId('export').addEventListener('click',()=>{
  try{
   const data=serializeBackup(project);

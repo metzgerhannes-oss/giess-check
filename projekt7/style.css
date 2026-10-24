@@ -40,3 +40,43 @@ input[type=range]{min-height:44px}
  .rank-item:first-of-type .bar-fill{background:#145d48}
  :focus-visible{outline:3px solid #075a91;outline-offset:3px}
 }
+
+/* Sprint 12: readable reflow and consistent keyboard reading order. */
+.skip-link{top:0;left:0}
+#workspace:focus{outline:none}
+.button,.archive-info strong{font-size:14px}
+.field-label,.rating-label,.section-head p,.range-control label,.save-status,
+.archive-heading p,.archive-empty,.archive-warning,.install-grid p,
+.archive-info small,.aside-note,.aside-note strong,.winner p,.rank-meta,
+.explainer,.disclaimer{font-size:14px}
+.intro{font-size:15px}
+.privacy{font-size:12px}
+.entry-input,.criterion-name,.title-input{min-width:0}
+.option-entry,.criterion-head,.rating-row,.rank-heading{min-width:0}
+.archive-info,.rank-heading span{overflow-wrap:anywhere}
+.print-project-title{display:none}
+@media(max-width:1080px){
+ /* Visual order must match DOM and keyboard/screen-reader reading order. */
+ .insights{order:initial}
+}
+@media(max-width:380px){
+ .topbar{flex-wrap:wrap;align-items:flex-start}
+ .privacy{white-space:normal}
+ .hero-actions{min-width:0}
+ .hero h1{font-size:clamp(25px,9vw,32px)}
+ .control-row{grid-template-columns:minmax(0,1fr)}
+ .rating-row{grid-template-columns:minmax(0,1fr) minmax(0,1.1fr) 2rem;gap:6px}
+ .rank-heading{flex-wrap:wrap}
+ .actionbuttons .button{min-width:0}
+ .historybuttons{display:flex;flex-wrap:wrap;gap:6px}
+ .archive-tools .button{min-width:0}
+}
+@media(max-width:280px){
+ .rating-row{grid-template-columns:minmax(0,1fr) 2rem}
+ .rating-label{grid-column:1/-1}
+}
+@media print{
+ .print-project-title{display:block;font-size:19px;font-weight:750;overflow-wrap:anywhere;margin:0 0 14px}
+ .rank-meta,.disclaimer{font-size:12px}
+ .rank-item,.winner,.explainer{break-inside:avoid}
+}
