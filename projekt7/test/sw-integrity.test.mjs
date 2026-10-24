@@ -199,6 +199,7 @@ test('runtime repair rejects HTML disguised as CSS, SVG, PNG or manifest',async(
 });
 test('poisoned cached module is bypassed and replaced by trusted network response',async()=>{
  const sw=worker(),req=sw.request('./app.mjs');
+ await sw.lifecycle('install');
  const poisoned={ok:true,redirected:false,type:'basic',url:req.url,headers:{get:()=> 'text/html'}};
  sw.versions.get('klarpunkt-shell-v16').set(req.url,poisoned);
  const response=await sw.dispatch(req);
@@ -209,6 +210,7 @@ test('poisoned cached module is bypassed and replaced by trusted network respons
 });
 test('poisoned cached module is not served when the network fails',async()=>{
  const sw=worker({networkResponse:()=>{throw Error('Offline');}}),req=sw.request('./app.mjs');
+ await sw.lifecycle('install');
  sw.versions.get('klarpunkt-shell-v16').set(req.url,{
   ok:true,redirected:false,type:'basic',url:req.url,headers:{get:()=> 'text/html'}
  });
@@ -217,6 +219,7 @@ test('poisoned cached module is not served when the network fails',async()=>{
 });
 test('poisoned navigation HTML fails closed rather than executing cached content',async()=>{
  const sw=worker(),req=sw.request('./index.html',{mode:'navigate'});
+ await sw.lifecycle('install');
  sw.versions.get('klarpunkt-shell-v16').set(req.url,{
   ok:true,redirected:false,type:'basic',url:req.url,headers:{get:()=> 'text/javascript'}
  });
