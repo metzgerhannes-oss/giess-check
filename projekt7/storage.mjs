@@ -62,7 +62,9 @@ export function saveProject(storage,project,override=false,expectedPrimaryRaw=un
   try{storage.setItem(BACKUP_KEY,backupRaw);}
   catch(error){
    // Active data is saved; the previous backup is unchanged.
-   if(typeof onBackupFailure==='function')onBackupFailure(error);
+   // A warning listener must never turn an already committed primary write
+   // into an apparent failure (which could trigger a destructive retry).
+   try{if(typeof onBackupFailure==='function')onBackupFailure(error);}catch{}
   }
  }
  return clean;

@@ -1,9 +1,9 @@
 import {validateProject} from './core.mjs';
-import {ARCHIVE_CAP,ARCHIVE_KEY,readArchive} from './archive.mjs';
+import {ARCHIVE_CAP,ARCHIVE_KEY,MAX_ARCHIVE_BYTES,readArchive} from './archive.mjs';
 
 // Independent portable archive. Import replaces only the archive key, never
 // the active project or its backup. No network calls or dependencies.
-export const MAX_ARCHIVE_FILE_BYTES=350000;
+export const MAX_ARCHIVE_FILE_BYTES=MAX_ARCHIVE_BYTES;
 const byteSize=value=>new TextEncoder().encode(value).byteLength;
 function normalizeItems(items){
  if(!Array.isArray(items)||items.length>ARCHIVE_CAP)throw new Error('Unzulässige Anzahl an Archivständen.');
