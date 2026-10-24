@@ -10,7 +10,7 @@ const mime=path=>path==='./'||path.endsWith('.html')?'text/html':
  path.endsWith('.css')?'text/css':path.endsWith('.mjs')?'text/javascript':
  path.endsWith('.svg')?'image/svg+xml':path.endsWith('.png')?'image/png':'application/manifest+json';
 const trusted=(path,extra={})=>({
- ok:true,redirected:false,type:'basic',url:new URL(path,scope).href,
+ ok:true,status:200,redirected:false,type:'basic',url:new URL(path,scope).href,
  headers:{get:()=>mime(path)},
  cached:true,...extra
 });

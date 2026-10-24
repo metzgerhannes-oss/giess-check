@@ -357,9 +357,29 @@ try{
  await navigate(url);
  assert.equal(await evaluate("document.querySelector('#project-title').value"),'Ersttab neu','Second offline cycle lost local state');
  assert.equal(await evaluate("document.querySelectorAll('#results .rank-item').length>=2"),true,'Recovered shell fails offline');
+ // Poison cached HTML with a synthetic wrong-MIME Response; never execute it.
+ stage='poisoned HTML fail-closed and verified online repair';
+ await send('Network.emulateNetworkConditions',{offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1});
+ const poisonedHTML=await evaluate(`(async()=>{
+  const cache=await caches.open(${JSON.stringify(smokeVersion)});
+  await cache.put('./index.html',new Response('poison',{headers:{'Content-Type':'text/javascript'}}));
+  return (await cache.match('./index.html')).headers.get('content-type');
+ })()`);
+ assert.equal(poisonedHTML,'text/javascript','Poisoned cache fixture missing');
+ denyAssets=true;
+ const blocked=await send('Page.navigate',{url:url+'?poison-probe=1'});
+ await sleep(400);
+ assert.equal(Boolean(blocked.errorText)||await evaluate("!document.querySelector('#results .rank-item')"),true,'Poisoned HTML must fail closed');
+ denyAssets=false;
+ await navigate(url);
+ assert.equal(await evaluate("document.querySelector('#project-title').value"),'Ersttab neu','Poisoned HTML recovery lost local state');
+ assert.equal(await evaluate("document.querySelectorAll('#results .rank-item').length>=2"),true,'Poisoned HTML recovery missing modules');
+ await send('Network.emulateNetworkConditions',{offline:true,latency:0,downloadThroughput:0,uploadThroughput:0});
+ await navigate(url);
+ assert.equal(await evaluate("document.querySelector('#project-title').value"),'Ersttab neu','Poisoned HTML offline recheck failed');
  assert.deepEqual(errors,[],'Uncaught browser exceptions');
  assert.deepEqual(external,[],'Unexpected external HTTP requests');
- console.log('Browser milestone PASS: reflow, touch, storage faults, multi-tab, offline upgrade, real CacheStorage eviction, fail-closed outage, full online recovery, second offline reload, JS exceptions, external requests');
+ console.log('Browser milestone PASS: reflow, touch, storage faults, multi-tab, offline upgrade, real CacheStorage eviction, fail-closed outage, full online recovery, second offline reload, poisoned HTML fail-closed and recovery, JS exceptions, external requests');
 }catch(error){
  console.error('Browser milestone failed at '+stage+'; Chromium stderr tail: '+browserStderr.slice(-1600));
  throw error;

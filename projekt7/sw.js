@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v17';
+const VERSION='klarpunkt-shell-v18';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Cache only this app's immutable shell paths, never arbitrary data or URL variants.
 const STATIC_PATHS=new Set(FILES.map(path=>new URL(path,self.registration.scope).pathname));
@@ -10,7 +10,7 @@ const MIME={
  manifest:['application/manifest+json','application/json','application/octet-stream','text/plain']
 };
 function trustedShellAsset(response,path){
- if(!response||!response.ok||response.redirected||
+ if(!response||!response.ok||response.status!==200||response.redirected||
     (response.type!=='basic'&&response.type!=='default'))return false;
  if(response.url!==new URL(path,self.registration.scope).href)return false;
  const type=response.headers?.get('content-type')?.split(';')[0]?.trim().toLowerCase();
@@ -67,10 +67,9 @@ self.addEventListener('fetch',event=>{
   if(url.pathname!==scope.pathname&&url.pathname!==index.pathname)return;
   event.respondWith(caches.open(VERSION).then(async cache=>{
    const hit=await cache.match('./index.html');
-   // Poisoned cached HTML must never be executed or silently repaired.
-   if(hit&&!trustedShellAsset(hit,'./index.html'))return Response.error();
+   // Never execute poisoned HTML. A full, validated online recovery may repair it.
    // An index alone is not an offline app: check every asset before serving it.
-   if(hit&&await completeShell(cache))return hit;
+   if(hit&&trustedShellAsset(hit,'./index.html')&&await completeShell(cache))return hit;
    try{
     const restored=await recoverShell(cache);
     return trustedShellAsset(restored,'./index.html')?restored:Response.error();
@@ -89,9 +88,8 @@ self.addEventListener('fetch',event=>{
   if(trustedShellAsset(hit,shellPath))return hit;
   const response=await fetch(request);
   // Apply precache MIME, origin and redirect checks to runtime repairs too.
-  if(trustedShellAsset(response,shellPath)){
-   cache.put(request,response.clone()).catch(()=>{});
-  }
+  if(!trustedShellAsset(response,shellPath))return Response.error();
+  cache.put(request,response.clone()).catch(()=>{});
   return response;
  }));
 });
