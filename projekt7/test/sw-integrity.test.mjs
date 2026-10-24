@@ -6,9 +6,9 @@ import {runInNewContext} from 'node:vm';
 const source=readFileSync(new URL('../sw.js',import.meta.url),'utf8');
 const scope='https://example.test/giess-check/projekt7/';
 const shell=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
-function worker({missing=null,failPrecache=false,networkResponse=null,failPut=false}={}){
+function worker({missing=null,failPrecache=false,networkResponse=null,failPut=false,badPrecache=null}={}){
  const handlers=new Map(),versions=new Map(),deleted=[];
- const current='klarpunkt-shell-v14',old='klarpunkt-shell-v13';
+ const current='klarpunkt-shell-v15',old='klarpunkt-shell-v14';
  const oldEntries=new Map(shell.map(path=>[new URL(path,scope).href,{old:true}]));
  versions.set(old,oldEntries);versions.set('unrelated-app',new Map());
  let waiting=0,claimed=0,networkCalls=0,putCalls=0;
@@ -21,7 +21,17 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
     match:async req=>entries.get(keyOf(req)),
     addAll:async files=>{
      for(const path of files){
-      if(path!==missing)entries.set(keyOf(path),{cached:true});
+      if(path!==missing){
+       const mime=path==='./'||path.endsWith('.html')?'text/html':
+         path.endsWith('.mjs')?'text/javascript':path.endsWith('.css')?'text/css':
+         path.endsWith('.svg')?'image/svg+xml':path.endsWith('.png')?'image/png':'application/manifest+json';
+       const fault=badPrecache?.path===path?badPrecache:null;
+       entries.set(keyOf(path),{
+        ok:fault?.ok??true,redirected:fault?.redirected??false,
+        type:fault?.type??'basic',url:fault?.url??keyOf(path),
+        headers:{get:()=>fault?.mime??mime}
+       });
+      }
      }
      if(failPrecache)throw Error('Precache failed');
     },
@@ -70,9 +80,9 @@ test('complete precache permits activation and removes only older app versions',
  assert.equal(sw.waiting,1);
  await sw.lifecycle('activate');
  assert.equal(sw.claimed,1);
- assert.deepEqual(sw.deleted,['klarpunkt-shell-v13']);
+ assert.deepEqual(sw.deleted,['klarpunkt-shell-v14']);
  assert.equal(sw.versions.has('unrelated-app'),true);
- assert.equal(sw.versions.get('klarpunkt-shell-v14').size,shell.length);
+ assert.equal(sw.versions.get('klarpunkt-shell-v15').size,shell.length);
 });
 test('failed precache never skips waiting or removes a previous offline version',async()=>{
  const sw=worker({failPrecache:true});
@@ -90,11 +100,37 @@ test('partial precache fails closed rather than installing a broken shell',async
 test('activation with evicted current asset preserves older complete shell',async()=>{
  const sw=worker();
  await sw.lifecycle('install');
- sw.versions.get('klarpunkt-shell-v14').delete(new URL('./app.mjs',scope).href);
+ sw.versions.get('klarpunkt-shell-v15').delete(new URL('./app.mjs',scope).href);
  await assert.rejects(sw.lifecycle('activate'),/Incomplete offline shell/);
  assert.equal(sw.claimed,0);
  assert.deepEqual(sw.deleted,[]);
  assert.equal(sw.versions.get('klarpunkt-shell-v13').size,shell.length);
+});
+test('precache rejects wrong MIME, redirects, foreign URLs and opaque responses without evicting old shell',async()=>{
+ const faults=[
+  {path:'./app.mjs',mime:'text/html'},
+  {path:'./style.css',redirected:true},
+  {path:'./core.mjs',url:'https://login.example.test/'},
+  {path:'./index.html',type:'opaque'},
+  {path:'./icon-192.png',ok:false}
+ ];
+ for(const badPrecache of faults){
+  const sw=worker({badPrecache});
+  await assert.rejects(sw.lifecycle('install'),/Incomplete offline shell/);
+  assert.equal(sw.waiting,0);
+  assert.equal(sw.versions.has('klarpunkt-shell-v14'),true);
+  assert.deepEqual(sw.deleted,[]);
+ }
+});
+test('activation refuses a poisoned cached shell and keeps previous offline version',async()=>{
+ const sw=worker();
+ await sw.lifecycle('install');
+ const url=new URL('./app.mjs',scope).href;
+ sw.versions.get('klarpunkt-shell-v15').get(url).headers.get=()=> 'text/html';
+ await assert.rejects(sw.lifecycle('activate'),/Incomplete offline shell/);
+ assert.equal(sw.claimed,0);
+ assert.deepEqual(sw.deleted,[]);
+ assert.equal(sw.versions.get('klarpunkt-shell-v14').size,shell.length);
 });
 test('redirected asset responses are delivered but never persisted',async()=>{
  const sw=worker({networkResponse:req=>({
@@ -122,7 +158,7 @@ test('valid same-origin response repairs one missing asset without caching URL v
  const response=await sw.dispatch(req);
  assert.equal(response.ok,true);
  assert.equal(sw.putCalls,1);
- assert.equal(sw.versions.get('klarpunkt-shell-v14').has(req.url),true);
+ assert.equal(sw.versions.get('klarpunkt-shell-v15').has(req.url),true);
  await sw.dispatch(req);
  assert.equal(sw.networkCalls,1);
  assert.equal(sw.dispatch(sw.request('./app.mjs?version=2')),undefined);

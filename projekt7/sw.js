@@ -1,12 +1,28 @@
-const VERSION='klarpunkt-shell-v14';
+const VERSION='klarpunkt-shell-v15';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Cache only this app's immutable shell paths, never arbitrary data or URL variants.
 const STATIC_PATHS=new Set(FILES.map(path=>new URL(path,self.registration.scope).pathname));
+// A 200 response may still be an HTML login or fallback page rather than an asset.
+const MIME={
+ html:['text/html'],js:['text/javascript','application/javascript','text/ecmascript','application/ecmascript'],
+ css:['text/css'],svg:['image/svg+xml'],png:['image/png'],
+ manifest:['application/manifest+json','application/json','application/octet-stream','text/plain']
+};
+function trustedShellAsset(response,path){
+ if(!response||!response.ok||response.redirected||
+    (response.type!=='basic'&&response.type!=='default'))return false;
+ if(response.url!==new URL(path,self.registration.scope).href)return false;
+ const type=response.headers?.get('content-type')?.split(';')[0]?.trim().toLowerCase();
+ const kind=path==='./'||path.endsWith('.html')?'html':
+   path.endsWith('.mjs')||path.endsWith('.js')?'js':
+   path.endsWith('.css')?'css':path.endsWith('.svg')?'svg':
+   path.endsWith('.png')?'png':'manifest';
+ return MIME[kind].includes(type);
+}
 async function completeShell(cache){
- // Cache Storage can be evicted independently of service worker lifecycle.
- // Do not replace a working older shell with a partially available new shell.
+ // Never replace a working older shell with a partial or poisoned cache.
  const matches=await Promise.all(FILES.map(path=>cache.match(path)));
- return matches.every(Boolean);
+ return matches.every((response,index)=>trustedShellAsset(response,FILES[index]));
 }
 self.addEventListener('install',event=>{
  event.waitUntil(caches.open(VERSION).then(async cache=>{
