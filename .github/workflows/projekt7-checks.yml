@@ -21,23 +21,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Node tests
-        run: node --test projekt7/test/*.test.mjs
-      - name: JavaScript syntax
+      - name: Mandatory gate - all JS syntax, Node regressions, offline assets and safety
+        shell: bash
         run: |
-          node --check projekt7/core.mjs
-          node --check projekt7/storage.mjs
-          node --check projekt7/history.mjs
-          node --check projekt7/unsaved.mjs
-          node --check projekt7/archive.mjs
-          node --check projekt7/archive-transfer.mjs
-          node --check projekt7/backup.mjs
-          node --check projekt7/app.mjs
-          node --check projekt7/sw.js
-          node --check projekt7/test/live-verify.mjs
-          node --check projekt7/test/live-smoke.mjs
-      - name: HTML, PWA asset references
-        run: python3 projekt7/test/check_assets.py
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            node --check "$file"
+          done < <(find projekt7 -type f \( -name '*.js' -o -name '*.mjs' \) -print0)
+          node --test projekt7/test/*.test.mjs
+          python3 projekt7/test/check_assets.py
 
   browser_milestone:
     if: github.event_name == 'pull_request' && contains(github.event.pull_request.title, '[milestone]')
