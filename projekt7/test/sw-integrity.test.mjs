@@ -139,7 +139,7 @@ test('redirected asset responses are delivered but never persisted',async()=>{
  const response=await sw.dispatch(sw.request('./app.mjs'));
  assert.equal(response.redirected,true);
  assert.equal(sw.putCalls,0);
- assert.equal(sw.versions.get('klarpunkt-shell-v14').size,0);
+ assert.equal(sw.versions.get('klarpunkt-shell-v15').size,0);
 });
 test('opaque, mismatched-URL and failed network responses are never cached',async()=>{
  for(const response of [
@@ -169,5 +169,5 @@ test('failed runtime cache write does not prevent online delivery',async()=>{
  const response=await sw.dispatch(sw.request('./style.css'));
  assert.equal(response.ok,true);
  assert.equal(sw.putCalls,1);
- assert.equal(sw.versions.get('klarpunkt-shell-v14').size,0);
+ assert.equal(sw.versions.get('klarpunkt-shell-v15').size,0);
 });
