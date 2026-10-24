@@ -88,14 +88,14 @@ test('failed precache never skips waiting or removes a previous offline version'
  const sw=worker({failPrecache:true});
  await assert.rejects(sw.lifecycle('install'),/Precache failed/);
  assert.equal(sw.waiting,0);
- assert.equal(sw.versions.has('klarpunkt-shell-v13'),true);
+ assert.equal(sw.versions.has('klarpunkt-shell-v14'),true);
  assert.deepEqual(sw.deleted,[]);
 });
 test('partial precache fails closed rather than installing a broken shell',async()=>{
  const sw=worker({missing:'./core.mjs'});
  await assert.rejects(sw.lifecycle('install'),/Incomplete offline shell/);
  assert.equal(sw.waiting,0);
- assert.equal(sw.versions.has('klarpunkt-shell-v13'),true);
+ assert.equal(sw.versions.has('klarpunkt-shell-v14'),true);
 });
 test('activation with evicted current asset preserves older complete shell',async()=>{
  const sw=worker();
@@ -104,7 +104,7 @@ test('activation with evicted current asset preserves older complete shell',asyn
  await assert.rejects(sw.lifecycle('activate'),/Incomplete offline shell/);
  assert.equal(sw.claimed,0);
  assert.deepEqual(sw.deleted,[]);
- assert.equal(sw.versions.get('klarpunkt-shell-v13').size,shell.length);
+ assert.equal(sw.versions.get('klarpunkt-shell-v14').size,shell.length);
 });
 test('precache rejects wrong MIME, redirects, foreign URLs and opaque responses without evicting old shell',async()=>{
  const faults=[
