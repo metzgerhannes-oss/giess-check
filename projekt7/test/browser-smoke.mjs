@@ -348,11 +348,14 @@ try{
  const sourceWorker=await readFile(join(root,'sw.js'),'utf8');
  const workerVersion=sourceWorker.match(/const VERSION='([^']+)'/)?.[1];
  assert.ok(workerVersion,'Worker version marker missing');
- const smokeVersion=workerVersion+'-smoke';
+ const smokeVersion='klarpunkt-shell-v'+(Number(workerVersion.split('-v').at(-1))+1);
  workerOverride=sourceWorker.replace("const VERSION='"+workerVersion+"'","const VERSION='"+smokeVersion+"'");
  assert.notEqual(workerOverride,sourceWorker,'Worker version replacement failed');
+ await evaluate("window.__controllerBeforeUpgrade=navigator.serviceWorker.controller");
+ assert.equal(await evaluate("!!window.__controllerBeforeUpgrade"),true,'Missing old worker controller before update');
  await evaluate("navigator.serviceWorker.ready.then(reg=>reg.update().then(()=>true))");
- await until('caches.keys().then(keys=>keys.includes('+JSON.stringify(smokeVersion)+')&&!keys.includes('+JSON.stringify(workerVersion)+'))');
+ await until('navigator.serviceWorker.controller!==window.__controllerBeforeUpgrade && caches.keys().then(keys=>keys.includes('+JSON.stringify(smokeVersion)+')&&keys.includes('+JSON.stringify(workerVersion)+'))');
+ assert.equal(await evaluate(`(async()=>{const old=await caches.open(${JSON.stringify(workerVersion)});return !!(await old.match('./index.html'))&&!!(await old.match('./app.mjs'));})()`),true,'Previous offline shell must survive worker handover');
  await send('Network.emulateNetworkConditions',{offline:true,latency:0,downloadThroughput:0,uploadThroughput:0});
  await navigate(url);
  assert.equal(await evaluate("document.querySelector('#project-title').value"),'Ersttab neu','Offline update lost local state');

@@ -9,7 +9,7 @@ assert.ok(shellVersion,'Offline shell version must be declared');
 const oldShellVersion='klarpunkt-shell-v'+(Number(shellVersion.split('-v').at(-1))-1);
 const scope='https://example.test/giess-check/projekt7/';
 const shell=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
-function worker({missing=null,failPrecache=false,networkResponse=null,failPut=false,badPrecache=null,holdPut=false}={}){
+function worker({missing=null,failPrecache=false,networkResponse=null,failPut=false,badPrecache=null,holdPut=false,failDelete=false}={}){
  const handlers=new Map(),versions=new Map(),deleted=[];
  const current=shellVersion,old=oldShellVersion;
  const oldEntries=new Map(shell.map(path=>[new URL(path,scope).href,{old:true}]));
@@ -55,7 +55,7 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
    };
   },
   keys:async()=>[...versions.keys()],
-  delete:async name=>{deleted.push(name);return versions.delete(name);}
+  delete:async name=>{deleted.push(name);if(failDelete)throw Error('Cache deletion denied');return versions.delete(name);}
  };
  const self={
   registration:{scope},addEventListener:(type,fn)=>handlers.set(type,fn),
@@ -93,15 +93,49 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
   get networkCalls(){return networkCalls;},get putCalls(){return putCalls;},get addAllCalls(){return addAllCalls;}
  };
 }
-test('complete precache permits activation and removes only older app versions',async()=>{
+test('complete precache permits activation and retains the immediately previous shell',async()=>{
  const sw=worker();
  await sw.lifecycle('install');
  assert.equal(sw.waiting,1);
  await sw.lifecycle('activate');
  assert.equal(sw.claimed,1);
- assert.deepEqual(sw.deleted,[oldShellVersion]);
+ assert.deepEqual(sw.deleted,[]);
+ assert.equal(sw.versions.has(oldShellVersion),true,'Previous shell must remain for in-flight old-worker fetches');
  assert.equal(sw.versions.has('unrelated-app'),true);
  assert.equal(sw.versions.get(shellVersion).size,shell.length);
+});
+test('activation retains one previous release, prunes older releases and ignores foreign or future caches',async()=>{
+ const sw=worker(),version=Number(shellVersion.split('-v').at(-1));
+ const stale1='klarpunkt-shell-v'+(version-3),stale2='klarpunkt-shell-v'+(version-2);
+ const future='klarpunkt-shell-v'+(version+1),lookalike='klarpunkt-shell-vbad';
+ for(const key of [stale1,stale2,future,lookalike])sw.versions.set(key,new Map());
+ await sw.lifecycle('install');
+ await sw.lifecycle('activate');
+ assert.deepEqual([...sw.deleted].sort(),[stale1,stale2].sort());
+ for(const key of [shellVersion,oldShellVersion,future,lookalike,'unrelated-app']){
+  assert.equal(sw.versions.has(key),true,key+' must not be deleted');
+ }
+ assert.equal(sw.claimed,1);
+});
+test('failed stale-cache cleanup never prevents a complete new shell from activating',async()=>{
+ const sw=worker({failDelete:true});
+ sw.versions.set('klarpunkt-shell-v1',new Map());
+ await sw.lifecycle('install');
+ await sw.lifecycle('activate');
+ assert.equal(sw.claimed,1,'Cleanup errors must not strand a fully installed worker');
+ assert.deepEqual(sw.deleted,['klarpunkt-shell-v1']);
+ assert.equal(sw.versions.has(oldShellVersion),true);
+ assert.equal(sw.versions.has(shellVersion),true);
+});
+test('retained previous release is not mistaken for the active offline shell',async()=>{
+ const sw=worker();
+ await sw.lifecycle('install');
+ await sw.lifecycle('activate');
+ sw.versions.get(shellVersion).delete(new URL('./core.mjs',scope).href);
+ sw.setPrecacheFailure(true);
+ assert.deepEqual(await sw.dispatch(sw.request('./index.html',{mode:'navigate'})),{networkError:true});
+ assert.equal(sw.versions.has(oldShellVersion),true,'Previous cache survives an offline outage');
+ assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
 });
 test('failed precache never skips waiting or removes a previous offline version',async()=>{
  const sw=worker({failPrecache:true});

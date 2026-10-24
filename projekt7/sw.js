@@ -1,4 +1,5 @@
-const VERSION='klarpunkt-shell-v23';
+const VERSION='klarpunkt-shell-v24';
+const SHELL_PREFIX='klarpunkt-shell-v';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Cache only this app's immutable shell paths, never arbitrary data or URL variants.
 const STATIC_PATHS=new Set(FILES.map(path=>new URL(path,self.registration.scope).pathname));
@@ -52,6 +53,16 @@ async function recoverShell(cache){
  try{return await active;}
  finally{if(recoveryInFlight===active)recoveryInFlight=null;}
 }
+// Retain one preceding release while old workers finish in-flight fetches.
+// Prune only older, canonical app cache names; never touch foreign/newer caches.
+// Cache cleanup failures must not strand a complete new offline shell.
+async function pruneOlderShells(){
+ const current=Number(VERSION.slice(SHELL_PREFIX.length));
+ const older=(await caches.keys()).map(key=>({key,match:/^klarpunkt-shell-v([1-9]\d*)$/.exec(key)}))
+  .filter(({match})=>match&&Number.isSafeInteger(Number(match[1]))&&Number(match[1])<current)
+  .sort((a,b)=>Number(b.match[1])-Number(a.match[1]));
+ await Promise.allSettled(older.slice(1).map(({key})=>caches.delete(key)));
+}
 self.addEventListener('install',event=>{
  event.waitUntil(caches.open(VERSION).then(async cache=>{
   await cache.addAll(FILES);
@@ -63,8 +74,7 @@ self.addEventListener('activate',event=>{
  event.waitUntil(caches.open(VERSION).then(async cache=>{
   // Never delete previous working offline versions if the new shell was evicted.
   if(!(await completeShell(cache)))throw new Error('Incomplete offline shell at activation');
-  const keys=await caches.keys();
-  await Promise.all(keys.filter(key=>key.startsWith('klarpunkt-shell-')&&key!==VERSION).map(key=>caches.delete(key)));
+  await pruneOlderShells();
   await self.clients.claim();
  }));
 });
