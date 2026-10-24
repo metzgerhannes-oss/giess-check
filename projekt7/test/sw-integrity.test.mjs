@@ -12,6 +12,7 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
  const oldEntries=new Map(shell.map(path=>[new URL(path,scope).href,{old:true}]));
  versions.set(old,oldEntries);versions.set('unrelated-app',new Map());
  let waiting=0,claimed=0,networkCalls=0,putCalls=0,addAllCalls=0;
+ let precacheShouldFail=failPrecache;
  const keyOf=req=>new URL(typeof req==='string'?req:req.url,scope).href;
  const caches={
   open:async name=>{
@@ -21,20 +22,24 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
     match:async req=>entries.get(keyOf(req)),
     addAll:async files=>{
      addAllCalls++;
+     // Model atomic Cache.addAll: stage all entries before committing.
+     const staged=new Map(entries);
      for(const path of files){
       if(path!==missing){
        const mime=path==='./'||path.endsWith('.html')?'text/html':
          path.endsWith('.mjs')?'text/javascript':path.endsWith('.css')?'text/css':
          path.endsWith('.svg')?'image/svg+xml':path.endsWith('.png')?'image/png':'application/manifest+json';
        const fault=badPrecache?.path===path?badPrecache:null;
-       entries.set(keyOf(path),{
+       staged.set(keyOf(path),{
         ok:fault?.ok??true,redirected:fault?.redirected??false,
         type:fault?.type??'basic',url:fault?.url??keyOf(path),
         headers:{get:()=>fault?.mime??mime}
        });
       }
      }
-     if(failPrecache)throw Error('Precache failed');
+     if(precacheShouldFail)throw Error('Precache failed');
+     entries.clear();
+     for(const [key,value] of staged)entries.set(key,value);
     },
     put:async(req,response)=>{
      putCalls++;
@@ -76,6 +81,7 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
  };
  return {
   lifecycle,request,dispatch,versions,deleted,
+  setPrecacheFailure:value=>{precacheShouldFail=value;},
   get waiting(){return waiting;},get claimed(){return claimed;},
   get networkCalls(){return networkCalls;},get putCalls(){return putCalls;},get addAllCalls(){return addAllCalls;}
  };
@@ -267,4 +273,36 @@ test('simultaneous navigation attempts share one recovery batch',async()=>{
  assert.equal(a.headers.get('content-type'),'text/html');
  assert.equal(b.headers.get('content-type'),'text/html');
  assert.equal(sw.addAllCalls,1);
+});
+
+test('transient offline recovery failure preserves cached entries and can retry online',async()=>{
+ const sw=worker();
+ await sw.lifecycle('install');
+ const entries=sw.versions.get('klarpunkt-shell-v17');
+ entries.delete(new URL('./core.mjs',scope).href);
+ const before=new Map(entries);
+ sw.setPrecacheFailure(true);
+ const req=sw.request('./index.html',{mode:'navigate'});
+ assert.deepEqual(await sw.dispatch(req),{networkError:true});
+ assert.deepEqual([...entries.keys()],[...before.keys()],'Failed addAll must not replace cached assets');
+ assert.equal(sw.addAllCalls,2);
+ sw.setPrecacheFailure(false);
+ const page=await sw.dispatch(req);
+ assert.equal(page.headers.get('content-type'),'text/html');
+ assert.equal(entries.size,shell.length);
+ assert.equal(sw.addAllCalls,3);
+ assert.equal(await sw.dispatch(req),page);
+ assert.equal(sw.addAllCalls,3,'Recovered shell must not download again');
+});
+test('empty shell recovers after a temporary outage without touching unrelated caches',async()=>{
+ const sw=worker({failPrecache:true});
+ const req=sw.request('./index.html',{mode:'navigate'});
+ assert.deepEqual(await sw.dispatch(req),{networkError:true});
+ assert.equal(sw.versions.get('klarpunkt-shell-v17').size,0,'Atomic failure cannot leave partial shell');
+ assert.equal(sw.versions.get('unrelated-app').size,0);
+ sw.setPrecacheFailure(false);
+ const page=await sw.dispatch(req);
+ assert.equal(page.headers.get('content-type'),'text/html');
+ assert.equal(sw.versions.get('klarpunkt-shell-v17').size,shell.length);
+ assert.equal(sw.versions.get('klarpunkt-shell-v16').size,shell.length);
 });

@@ -16,6 +16,8 @@ assert.ok(chrome,'Chrome/Chromium is required for this milestone test');
 const profile=await mkdtemp(join(tmpdir(),'projekt7-browser-'));
 let browser,ws,ws2,server;
 let workerOverride=null;
+let denyAssets=false;
+let stage='browser startup',browserStderr='';
 const pending2=new Map();
 const pending=new Map(),errors=[],external=[];
 let nextId=0;
@@ -51,6 +53,7 @@ try{
   try{
    const path=decodeURIComponent(new URL(req.url,'http://localhost').pathname);
    if(!path.startsWith('/projekt7/')){res.writeHead(404).end();return;}
+    if(denyAssets){res.writeHead(503,{'Cache-Control':'no-store'}).end('Temporary test outage');return;}
    const relative=path.slice('/projekt7/'.length)||'index.html';
    const file=resolve(root,relative);
    if(file===root||!file.startsWith(root+sep)){res.writeHead(403).end();return;}
@@ -63,14 +66,15 @@ try{
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  const origin='http://127.0.0.1:'+server.address().port;
  const url=origin+'/projekt7/index.html';
- browser=spawn(chrome,['--headless=new','--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--no-first-run','--no-default-browser-check','--remote-allow-origins=*','--remote-debugging-port=0','--user-data-dir='+profile,'about:blank'],{stdio:'ignore'});
+ browser=spawn(chrome,['--headless=new','--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--no-first-run','--no-default-browser-check','--remote-allow-origins=*','--remote-debugging-port=0','--user-data-dir='+profile,'about:blank'],{stdio:['ignore','ignore','pipe']});
+ browser.stderr.on('data',chunk=>{browserStderr=(browserStderr+chunk.toString()).slice(-4000);});
  let port;
  for(let i=0;i<150;i++){
   if(browser.exitCode!==null)throw new Error('Browser terminated unexpectedly');
   try{port=Number((await readFile(join(profile,'DevToolsActivePort'),'utf8')).split('\n')[0]);if(port)break;}catch{}
   await sleep(100);
  }
- assert.ok(port,'Chrome DevTools port not found');
+ assert.ok(port,'Chrome DevTools port not found: '+browserStderr.slice(-1500));
  const targets=await (await fetch('http://127.0.0.1:'+port+'/json/list')).json();
  const target=targets.find(t=>t.type==='page');
  assert.ok(target,'Chrome page target missing');
@@ -92,7 +96,9 @@ try{
  await send('Page.enable');await send('Runtime.enable');await send('Network.enable');
  await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:3,mobile:true});
  await send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5});
+ stage='initial browser navigation';
  await navigate(url);
+ stage='mobile reflow and accessibility';
  // Reflow, focus and report milestone at 320 CSS pixels.
  await send('Emulation.setDeviceMetricsOverride',{width:320,height:720,deviceScaleFactor:2,mobile:true});
  await sleep(100);
@@ -132,6 +138,7 @@ try{
  assert.equal(await evaluate("document.documentElement.scrollWidth<=document.documentElement.clientWidth+1"),true,'Horizontal overflow returning to mobile viewport');
  await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:3,mobile:true});
  assert.equal(await evaluate("document.querySelectorAll('#results .rank-item').length>=2"),true);
+ stage='browser storage and import regression';
  // Browser quota fault: a failed secondary backup must not lose active data.
  const quotaFault=await evaluate(`(()=>{
   const original=Storage.prototype.setItem;
@@ -244,6 +251,7 @@ try{
  await until("document.querySelector('#project-title').value==='Parallel-Tab'");
  assert.equal(await evaluate("document.querySelector('#reload-storage').hidden"),true);
 
+ stage='native two-tab conflict regression';
  // Two genuine Chrome tabs: verify native storage events and independent editors.
  const newTab=await send('Target.createTarget',{url});
  const allTargets=await (await fetch('http://127.0.0.1:'+port+'/json/list')).json();
@@ -305,6 +313,7 @@ try{
  assert.equal(await evaluate("document.querySelector('#project-title').value"),'Ersttab neu','Offline persistence broken');
  assert.equal(await evaluate("document.querySelectorAll('#results .rank-item').length>=2"),true,'Offline module loading broken');
 
+ stage='offline service-worker upgrade';
  // Simulate a deployment and verify the new shell survives a cold offline reload.
  await send('Network.emulateNetworkConditions',{offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1});
  const sourceWorker=await readFile(join(root,'sw.js'),'utf8');
@@ -319,9 +328,41 @@ try{
  await navigate(url);
  assert.equal(await evaluate("document.querySelector('#project-title').value"),'Ersttab neu','Offline update lost local state');
  assert.equal(await evaluate("document.querySelectorAll('#results .rank-item').length>=2"),true,'Offline update missing app modules');
+
+ // Evict a real CacheStorage entry; never serve incomplete HTML during outage.
+ stage='offline cache eviction and fail-closed navigation';
+ const evicted=await evaluate(`(async()=>{
+  const cache=await caches.open(${JSON.stringify(smokeVersion)});
+  const removed=await cache.delete('./core.mjs');
+  return {removed,missing:!(await cache.match('./core.mjs'))};
+ })()`);
+ assert.deepEqual(evicted,{removed:true,missing:true},'CacheStorage eviction did not occur');
+ denyAssets=true;
+ const denied=await send('Page.navigate',{url:url+'?eviction-probe=1'});
+ await sleep(400);
+ const failedClosed=Boolean(denied.errorText)||await evaluate("!document.querySelector('#results .rank-item')");
+ assert.equal(failedClosed,true,'Partial offline shell must fail closed during network outage');
+ stage='online full-shell recovery after cache eviction';
+ denyAssets=false;
+ await send('Network.emulateNetworkConditions',{offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1});
+ await navigate(url);
+ const recovered=await evaluate(`(async()=>{
+  const cache=await caches.open(${JSON.stringify(smokeVersion)});
+  return {core:!!(await cache.match('./core.mjs')),index:!!(await cache.match('./index.html')),count:(await cache.keys()).length};
+ })()`);
+ assert.deepEqual(recovered,{core:true,index:true,count:16},'Full shell recovery incomplete');
+ assert.equal(await evaluate("document.querySelector('#project-title').value"),'Ersttab neu','Online recovery lost local state');
+ stage='second offline navigation after recovery';
+ await send('Network.emulateNetworkConditions',{offline:true,latency:0,downloadThroughput:0,uploadThroughput:0});
+ await navigate(url);
+ assert.equal(await evaluate("document.querySelector('#project-title').value"),'Ersttab neu','Second offline cycle lost local state');
+ assert.equal(await evaluate("document.querySelectorAll('#results .rank-item').length>=2"),true,'Recovered shell fails offline');
  assert.deepEqual(errors,[],'Uncaught browser exceptions');
  assert.deepEqual(external,[],'Unexpected external HTTP requests');
- console.log('Browser milestone PASS: 320 CSS px reflow, touch, backup, corrupt import, primary quota, genuine multi-tab, archive sync, offline upgrade, JS exceptions, external requests');
+ console.log('Browser milestone PASS: reflow, touch, storage faults, multi-tab, offline upgrade, real CacheStorage eviction, fail-closed outage, full online recovery, second offline reload, JS exceptions, external requests');
+}catch(error){
+ console.error('Browser milestone failed at '+stage+'; Chromium stderr tail: '+browserStderr.slice(-1600));
+ throw error;
 }finally{
  for(const p of pending.values()){clearTimeout(p.timer);p.reject(new Error('Closing'));}pending.clear();
  for(const p of pending2.values()){clearTimeout(p.timer);p.reject(new Error('Closing'));}pending2.clear();
