@@ -53,3 +53,10 @@ Nach dynamischen Ergänzungen und Löschungen bleibt der Tastaturfokus auf einem
 
 ## Sprint 11: Speicherfehler unter Last und höherer Kontrast
 Der aktive Arbeitsstand wird **vor** der optionalen zusätzlichen lokalen Rückfallkopie gespeichert. Schlägt der primäre `localStorage`-Schreibvorgang fehl, bleibt die ältere Rückfallkopie unverändert. Ist nur das Schreiben der Rückfallkopie wegen Speicherquote gesperrt, gilt der aktive Arbeitsstand als gespeichert, aber die Oberfläche warnt ausdrücklich vor der fehlenden zusätzlichen Sicherung und empfiehlt den JSON-Export. Zwischen beiden Schlüsseln gibt es keine atomare Transaktion; ein Browserabsturz genau dazwischen kann den unmittelbar vorherigen Stand aus der lokalen Rückfallkopie auslassen, der neue primäre Stand ist dann aber bereits gespeichert. Ein Archiv-Lesefehler wegen verweigertem Speicherzugriff wird als „nicht verfügbar“ statt fälschlich als „beschädigt“ gemeldet. Acht neue Fault-Injection-Regressionen (darunter 250 Schreibversuche), ein echter Chromium-Quota-Fehlertest und die Simulation von `prefers-contrast: more` sichern dieses Paket ab. Reale iPhone-/Safari-Hardware bleibt ungetestet.
+
+
+## Sprint 12: Barrierefreiheit und mobile Vergrößerung
+- Visuelle Reihenfolge und Tastatur-/Screenreader-Reihenfolge stimmen auch bei schmaler Ansicht überein; der Sprunglink fokussiert das Hauptsegment.
+- Zusatztexte und Bedienelemente sind größer lesbar; Kopfzeile, Regler und Aktionen umbrechen bei engen Viewports.
+- Druckbericht enthält aktuelle Projektüberschrift und Druckdatum.
+- Chromium-Meilenstein prüft 320-CSS-Pixel-Reflow, Fokusziel, Reihenfolge und Drucktitel. Kein Ersatz für VoiceOver auf echter iPhone-Hardware.

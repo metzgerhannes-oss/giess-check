@@ -93,6 +93,17 @@ try{
  await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:3,mobile:true});
  await send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5});
  await navigate(url);
+ // Reflow, focus and report milestone at 320 CSS pixels.
+ await send('Emulation.setDeviceMetricsOverride',{width:320,height:720,deviceScaleFactor:2,mobile:true});
+ await sleep(100);
+ assert.equal(await evaluate("document.documentElement.scrollWidth<=window.innerWidth+1"),true,'Horizontal scrolling at 320 CSS px');
+ assert.equal(await evaluate("getComputedStyle(document.querySelector('.insights')).order"),'0','Mobile visual order differs from DOM order');
+ assert.equal(await evaluate("document.querySelector('#workspace').tabIndex"),-1,'Skip target must be focusable');
+ await evaluate("document.querySelector('#workspace').focus()");
+ assert.equal(await evaluate("document.activeElement.id"),'workspace','Skip target cannot receive keyboard focus');
+ await evaluate("window.dispatchEvent(new Event('beforeprint'))");
+ assert.equal(await evaluate("document.querySelector('#print-project-title').textContent.includes(document.querySelector('#project-title').value)"),true,'Print report missing the current title');
+ await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:3,mobile:true});
  assert.equal(await evaluate("document.querySelectorAll('#results .rank-item').length>=2"),true);
  // Browser quota fault: a failed secondary backup must not lose active data.
  const quotaFault=await evaluate(`(()=>{
@@ -235,10 +246,10 @@ try{
  // Simulate a deployment and verify the new shell survives a cold offline reload.
  await send('Network.emulateNetworkConditions',{offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1});
  const sourceWorker=await readFile(join(root,'sw.js'),'utf8');
- workerOverride=sourceWorker.replace("'klarpunkt-shell-v10'","'klarpunkt-shell-v10-smoke'");
+ workerOverride=sourceWorker.replace("'klarpunkt-shell-v11'","'klarpunkt-shell-v11-smoke'");
  assert.notEqual(workerOverride,sourceWorker,'Worker version marker missing');
  await evaluate("navigator.serviceWorker.ready.then(reg=>reg.update().then(()=>true))");
- await until("caches.keys().then(keys=>keys.includes('klarpunkt-shell-v10-smoke')&&!keys.includes('klarpunkt-shell-v10'))");
+ await until("caches.keys().then(keys=>keys.includes('klarpunkt-shell-v11-smoke')&&!keys.includes('klarpunkt-shell-v11'))");
  await send('Network.emulateNetworkConditions',{offline:true,latency:0,downloadThroughput:0,uploadThroughput:0});
  await navigate(url);
  assert.equal(await evaluate("document.querySelector('#project-title').value"),'Ersttab neu','Offline update lost local state');
