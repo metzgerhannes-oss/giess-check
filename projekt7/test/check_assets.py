@@ -81,9 +81,9 @@ for fg,bg in [('#1c2b3a','#ffffff'),('#536272','#ffffff'),('#a7e8d9','#1e4967'),
 assert 'id="reload-storage"' in html
 assert 'STORAGE_CONFLICT' in (root / "storage.mjs").read_text(encoding="utf-8")
 assert "event.key===PRIMARY_KEY" in app
-assert "const VERSION='klarpunkt-shell-v15'" in sw
+assert "const VERSION='klarpunkt-shell-v16'" in sw
 assert "cache.match('./index.html')" in sw, "Version-consistent navigation required"
-assert "caches.open(VERSION).then(cache=>cache.match(request)" in sw, "Do not mix caches across apps"
+assert "caches.open(VERSION).then(async cache=>" in sw, "Do not mix caches across apps"
 
 assert 'id="archive-export"' in html and 'id="archive-import"' in html
 assert "from './archive-transfer.mjs'" in app
@@ -124,5 +124,10 @@ assert '.explainer p,.winner strong,.rank-heading span,.rating-label{overflow-wr
 # Sprint 15: a complete offline shell is required before install/activation.
 assert 'completeShell(cache)' in sw
 assert 'Incomplete offline shell' in sw
-assert "response.type==='basic'" in sw and 'response.url===request.url' in sw
+assert 'trustedShellAsset(response,shellPath)' in sw and 'trustedShellAsset(hit,shellPath)' in sw
 assert (root / 'test/sw-integrity.test.mjs').is_file()
+
+# Sprint 17: cached hits and runtime repairs must pass the same trust policy.
+assert 'PATH_BY_PATHNAME' in sw
+assert "trustedShellAsset(hit,'./index.html')" in sw
+assert "trustedShellAsset(response,path)?response:Response.error()" in sw
