@@ -66,6 +66,14 @@ export function saveProject(storage,project,override=false,expectedPrimaryRaw=un
  // Save the active version first: a failed primary write never changes backup.
  // Separate localStorage keys are not an atomic transaction.
  storage.setItem(PRIMARY_KEY,nextRaw);
+ // A storage adapter or a racing tab can acknowledge a write without retaining
+ // the intended value. Do not advance the recovery copy unless it is readable
+ // back byte-for-byte. A failed verification is never reported as a safe save.
+ if(storage.getItem(PRIMARY_KEY)!==nextRaw){
+  const error=new Error('Gespeicherter Browserstand konnte nicht bestätigt werden.');
+  error.code='STORAGE_CONFLICT';
+  throw error;
+ }
  if(backupRaw!==null){
   try{
    // When seeding an empty store, preserve a recovery copy another tab may
@@ -74,6 +82,11 @@ export function saveProject(storage,project,override=false,expectedPrimaryRaw=un
     throw new Error('Zusätzliche Sicherung wurde zwischenzeitlich geändert.');
    }
    storage.setItem(BACKUP_KEY,backupRaw);
+   // The backup is optional, but a silent failed write must be surfaced as a
+   // reduced-redundancy warning rather than claimed as a durable recovery copy.
+   if(storage.getItem(BACKUP_KEY)!==backupRaw){
+    throw new Error('Zusätzliche Sicherung konnte nicht bestätigt werden.');
+   }
   }catch(error){
    // Active data is saved; the previous backup is unchanged.
    // A warning listener must never turn an already committed primary write

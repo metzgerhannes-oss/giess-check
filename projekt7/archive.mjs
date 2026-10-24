@@ -35,11 +35,21 @@ export function assertArchiveVersion(storage,expectedRaw){
   throw error;
  }
 }
+// A successful setItem call is not sufficient evidence of persistence when
+// another tab races or a storage adapter silently drops the write.
+export function verifyArchiveWrite(storage,payload){
+ if(storage.getItem(ARCHIVE_KEY)!==payload){
+  const error=new Error('Archivspeicherung konnte nicht bestätigt werden.');
+  error.code='ARCHIVE_CONFLICT';
+  throw error;
+ }
+}
 function writeArchive(storage,items,expectedRaw){
  assertArchiveVersion(storage,expectedRaw);
  const payload=JSON.stringify({version:1,items});
  if(byteSize(payload)>MAX_ARCHIVE_BYTES)throw new Error('Archiv überschreitet 350 KB; vorhandene Daten bleiben unverändert.');
  storage.setItem(ARCHIVE_KEY,payload);
+ verifyArchiveWrite(storage,payload);
 }
 export function addSnapshot(storage,project,now=Date.now(),expectedRaw=undefined){
  const state=readArchive(storage);
