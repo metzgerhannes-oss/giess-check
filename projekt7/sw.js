@@ -1,5 +1,7 @@
-const VERSION='klarpunkt-shell-v8';
-const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
+const VERSION='klarpunkt-shell-v9';
+const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
+// Only known shell assets may be cached; no arbitrary in-scope responses or query variants.
+const STATIC_PATHS=new Set(FILES.map(path=>new URL(path,self.registration.scope).pathname));
 self.addEventListener('install',event=>{
  // A failed precache prevents activation, preserving the previous complete shell.
  event.waitUntil(caches.open(VERSION).then(cache=>cache.addAll(FILES)).then(()=>self.skipWaiting()));
@@ -20,6 +22,7 @@ self.addEventListener('fetch',event=>{
   event.respondWith(caches.open(VERSION).then(cache=>cache.match('./index.html')).then(hit=>hit||fetch(request)));
   return;
  }
+ if(url.search||!STATIC_PATHS.has(url.pathname))return;
  event.respondWith(caches.open(VERSION).then(cache=>cache.match(request).then(hit=>hit||fetch(request).then(response=>{
   if(response.ok){const copy=response.clone();cache.put(request,copy).catch(()=>{});}
   return response;
