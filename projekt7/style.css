@@ -81,7 +81,7 @@ input[type=range]{min-height:44px}
  .rank-item,.winner,.explainer{break-inside:avoid}
 }
 
-/* Sprint 13: 400%-zoom/320-CSS-pixel reflow and visible skip-target focus. */
+/* Sprint 13: 320-CSS-pixel reflow (400%-zoom-equivalent geometry) and skip-target focus. */
 #workspace:focus-visible{outline:3px solid #2383c1;outline-offset:3px}
 @media(max-width:400px){
  .shell,.columns,.editor,.insights,.panel,.archive,.actionbar,.brand,.hero,.hero-actions{min-width:0}

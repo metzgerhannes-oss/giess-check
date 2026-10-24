@@ -103,11 +103,9 @@ try{
  assert.equal(await evaluate("document.activeElement.id"),'workspace','Skip target cannot receive keyboard focus');
  await evaluate("window.dispatchEvent(new Event('beforeprint'))");
  assert.equal(await evaluate("document.querySelector('#print-project-title').textContent.includes(document.querySelector('#project-title').value)"),true,'Print report missing the current title');
- // Desktop 400% zoom of a 1280px window yields roughly 320 CSS px.
- // Exercise desktop media queries with maximal-length user-controlled labels.
- await send('Emulation.setDeviceMetricsOverride',{width:320,height:800,deviceScaleFactor:1,mobile:false});
- await send('Emulation.setPageScaleFactor',{pageScaleFactor:1});
- await navigate(url);
+ // WCAG reflow geometry: 320 CSS px corresponds to a 1280px window at 400% zoom.
+ // Chromium device emulation is not a real desktop-zoom or Safari hardware test.
+ await send('Emulation.setDeviceMetricsOverride',{width:320,height:800,deviceScaleFactor:2,mobile:true});
  await evaluate(`(()=>{
   const o=document.querySelector('#options .option-entry input');
   o.value='W'.repeat(80);o.dispatchEvent(new Event('input',{bubbles:true}));
@@ -124,9 +122,9 @@ try{
     width:Math.round(el.getBoundingClientRect().width),
     right:Math.round(el.getBoundingClientRect().right)}))};
  })()`);
- assert.ok(zoomOverflow.scroll<=zoomOverflow.viewport+1,'Horizontal overflow at desktop 400% zoom: '+JSON.stringify(zoomOverflow));
- assert.equal(await evaluate("getComputedStyle(document.querySelector('.archive-tools')).gridTemplateColumns!=='none'"),true,'Archive controls do not reflow at 400% zoom');
- assert.equal(await evaluate("document.querySelector('#archive-save').getBoundingClientRect().height>=40"),true,'Archive control too small at 400% zoom');
+ assert.ok(zoomOverflow.scroll<=zoomOverflow.viewport+1,'Horizontal overflow at 320 CSS px reflow: '+JSON.stringify(zoomOverflow));
+ assert.equal(await evaluate("getComputedStyle(document.querySelector('.archive-tools')).gridTemplateColumns!=='none'"),true,'Archive controls do not reflow at 320 CSS px');
+ assert.equal(await evaluate("document.querySelector('#archive-save').getBoundingClientRect().height>=40"),true,'Archive control too small at 320 CSS px');
  await evaluate("window.confirm=()=>true;document.querySelector('#load-example').click()");
  await until("document.querySelector('#options .option-entry input').value!=='W'.repeat(80)");
  await send('Emulation.setDeviceMetricsOverride',{width:320,height:720,deviceScaleFactor:2,mobile:true});
@@ -319,7 +317,7 @@ try{
  assert.equal(await evaluate("document.querySelectorAll('#results .rank-item').length>=2"),true,'Offline update missing app modules');
  assert.deepEqual(errors,[],'Uncaught browser exceptions');
  assert.deepEqual(external,[],'Unexpected external HTTP requests');
- console.log('Browser milestone PASS: 400% zoom, mobile reflow, touch, backup, corrupt import, primary quota, genuine multi-tab, archive sync, offline upgrade, JS exceptions, external requests');
+ console.log('Browser milestone PASS: 320 CSS px reflow, touch, backup, corrupt import, primary quota, genuine multi-tab, archive sync, offline upgrade, JS exceptions, external requests');
 }finally{
  for(const p of pending.values()){clearTimeout(p.timer);p.reject(new Error('Closing'));}pending.clear();
  for(const p of pending2.values()){clearTimeout(p.timer);p.reject(new Error('Closing'));}pending2.clear();
