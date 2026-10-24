@@ -1,10 +1,10 @@
 import {starterProject,blankProject,validateProject,evaluate,MAX_OPTIONS,MAX_CRITERIA} from './core.mjs';
-import {inspectStorage,saveProject,inspectPrimaryRevision,PRIMARY_KEY} from './storage.mjs';
+import {inspectStorage,saveProject,inspectPrimaryRevision,storageEventConflicts,PRIMARY_KEY} from './storage.mjs';
 import {createHistory} from './history.mjs';
 import {createUnsavedGuard} from './unsaved.mjs';
 import {readArchive,addSnapshot,removeSnapshot,ARCHIVE_CAP,ARCHIVE_KEY} from './archive.mjs';
 import {serializeBackup,parseBackupText,MAX_BACKUP_BYTES} from './backup.mjs';
-import {serializeArchiveBackup,parseArchiveBackup,importArchiveBackup,MAX_ARCHIVE_FILE_BYTES} from './archive-transfer.mjs';
+import {serializeArchiveBackup,importArchiveBackupAsync,MAX_ARCHIVE_FILE_BYTES} from './archive-transfer.mjs';
 
 const byId=id=>document.getElementById(id);
 const status=byId('save-status');
@@ -325,7 +325,7 @@ function renderArchive(){
   },'Gespeicherten Stand öffnen: '+item.project.title);
   const remove=elementButton('Entfernen','button secondary',()=>{
    if(!confirm('Diesen gespeicherten Stand endgültig entfernen?'))return;
-   try{removeSnapshot(browserStore(),item.id,expectedArchiveRaw);renderArchive();byId('archive-save').focus();status.textContent='Gespeicherten Stand entfernt.';}
+   try{removeSnapshot(browserStore(),item.id,state.raw);renderArchive();byId('archive-save').focus();status.textContent='Gespeicherten Stand entfernt.';}
    catch(err){
     if(err?.code==='ARCHIVE_CONFLICT'){renderArchive();status.textContent='Archiv inzwischen geändert. Liste aktualisiert; bitte erneut versuchen.';}
     else status.textContent='Archiv konnte nicht geändert werden. Bestehende Daten bleiben erhalten.';
@@ -355,10 +355,10 @@ byId('archive-import-file').addEventListener('change',async event=>{
  const file=event.target.files?.[0];event.target.value='';
  if(!file)return;
  if(file.size>MAX_ARCHIVE_FILE_BYTES){alert('Archivdatei zu groß (maximal 350 KB).');return;}
+ const baseline=expectedArchiveRaw;
  try{
-  const incoming=parseArchiveBackup(await file.text());
-  if(!confirm('Das bisherige lokale Archiv durch '+incoming.items.length+' importierte Stände ERSETZEN? Der aktuelle Arbeitsstand bleibt unverändert. Bitte das bisherige Archiv vorher als Datei sichern.'))return;
-  const count=importArchiveBackup(browserStore(),incoming,expectedArchiveRaw);
+  const count=await importArchiveBackupAsync(browserStore(),()=>file.text(),baseline,n=>confirm('Das bisherige lokale Archiv durch '+n+' importierte Stände ERSETZEN? Der aktuelle Arbeitsstand bleibt unverändert. Bitte das bisherige Archiv vorher als Datei sichern.'));
+  if(count===null)return;
   renderArchive();
   status.textContent=count+' Archivstände importiert. Aktueller Arbeitsstand unverändert.';
  }catch(err){
@@ -404,7 +404,7 @@ document.addEventListener('visibilitychange',()=>{
  if(document.visibilityState==='visible')reconcileOnReturn();
 });
 window.addEventListener('storage',event=>{
- if((event.key===PRIMARY_KEY||event.key===null)&&event.newValue!==expectedPrimaryRaw)markConflict();
+ if(storageEventConflicts(event.key,event.newValue,expectedPrimaryRaw))markConflict();
  if(event.key===ARCHIVE_KEY||event.key===null)renderArchive();
 });
 renderAll();

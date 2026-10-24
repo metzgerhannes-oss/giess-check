@@ -62,3 +62,22 @@ export function importArchiveBackup(storage,parsed,expectedRaw=undefined){
  verifyArchiveWrite(storage,payload);
  return parsed.items.length;
 }
+
+// Capture and check the displayed archive revision before asynchronous file
+// reading and the confirmation dialog. A storage event may refresh the UI
+// during either step, but must never silently rebase this replacement.
+export async function importArchiveBackupAsync(storage,readText,expectedRaw,approve){
+ if(!storage)throw new Error('Browser-Speicher nicht verfügbar.');
+ const initial=readArchive(storage);
+ if(initial.state==='damaged'||initial.state==='unavailable'){
+  throw new Error('Vorhandenes Archiv beschädigt oder nicht verfügbar; nichts wurde überschrieben.');
+ }
+ if(expectedRaw===undefined||initial.raw!==expectedRaw){
+  const error=new Error('Archiv wurde in einem anderen Tab geändert.');
+  error.code='ARCHIVE_CONFLICT';
+  throw error;
+ }
+ const parsed=parseArchiveBackup(await readText());
+ if(!approve(parsed.items.length))return null;
+ return importArchiveBackup(storage,parsed,expectedRaw);
+}

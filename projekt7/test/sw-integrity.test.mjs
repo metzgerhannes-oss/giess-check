@@ -4,11 +4,14 @@ import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 
 const source=readFileSync(new URL('../sw.js',import.meta.url),'utf8');
+const shellVersion=source.match(/^const VERSION='(klarpunkt-shell-v\d+)';/m)?.[1];
+assert.ok(shellVersion,'Offline shell version must be declared');
+const oldShellVersion='klarpunkt-shell-v'+(Number(shellVersion.split('-v').at(-1))-1);
 const scope='https://example.test/giess-check/projekt7/';
 const shell=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 function worker({missing=null,failPrecache=false,networkResponse=null,failPut=false,badPrecache=null,holdPut=false}={}){
  const handlers=new Map(),versions=new Map(),deleted=[];
- const current='klarpunkt-shell-v22',old='klarpunkt-shell-v21';
+ const current=shellVersion,old=oldShellVersion;
  const oldEntries=new Map(shell.map(path=>[new URL(path,scope).href,{old:true}]));
  versions.set(old,oldEntries);versions.set('unrelated-app',new Map());
  let waiting=0,claimed=0,networkCalls=0,putCalls=0,addAllCalls=0;
@@ -96,31 +99,31 @@ test('complete precache permits activation and removes only older app versions',
  assert.equal(sw.waiting,1);
  await sw.lifecycle('activate');
  assert.equal(sw.claimed,1);
- assert.deepEqual(sw.deleted,['klarpunkt-shell-v21']);
+ assert.deepEqual(sw.deleted,[oldShellVersion]);
  assert.equal(sw.versions.has('unrelated-app'),true);
- assert.equal(sw.versions.get('klarpunkt-shell-v22').size,shell.length);
+ assert.equal(sw.versions.get(shellVersion).size,shell.length);
 });
 test('failed precache never skips waiting or removes a previous offline version',async()=>{
  const sw=worker({failPrecache:true});
  await assert.rejects(sw.lifecycle('install'),/Precache failed/);
  assert.equal(sw.waiting,0);
- assert.equal(sw.versions.has('klarpunkt-shell-v21'),true);
+ assert.equal(sw.versions.has(oldShellVersion),true);
  assert.deepEqual(sw.deleted,[]);
 });
 test('partial precache fails closed rather than installing a broken shell',async()=>{
  const sw=worker({missing:'./core.mjs'});
  await assert.rejects(sw.lifecycle('install'),/Incomplete offline shell/);
  assert.equal(sw.waiting,0);
- assert.equal(sw.versions.has('klarpunkt-shell-v21'),true);
+ assert.equal(sw.versions.has(oldShellVersion),true);
 });
 test('activation with evicted current asset preserves older complete shell',async()=>{
  const sw=worker();
  await sw.lifecycle('install');
- sw.versions.get('klarpunkt-shell-v22').delete(new URL('./app.mjs',scope).href);
+ sw.versions.get(shellVersion).delete(new URL('./app.mjs',scope).href);
  await assert.rejects(sw.lifecycle('activate'),/Incomplete offline shell/);
  assert.equal(sw.claimed,0);
  assert.deepEqual(sw.deleted,[]);
- assert.equal(sw.versions.get('klarpunkt-shell-v21').size,shell.length);
+ assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
 });
 test('precache rejects wrong MIME, redirects, foreign URLs and opaque responses without evicting old shell',async()=>{
  const faults=[
@@ -139,7 +142,7 @@ test('precache rejects wrong MIME, redirects, foreign URLs and opaque responses 
   const sw=worker({badPrecache});
   await assert.rejects(sw.lifecycle('install'),/Incomplete offline shell/);
   assert.equal(sw.waiting,0);
-  assert.equal(sw.versions.has('klarpunkt-shell-v21'),true);
+  assert.equal(sw.versions.has(oldShellVersion),true);
   assert.deepEqual(sw.deleted,[]);
  }
 });
@@ -147,11 +150,11 @@ test('activation refuses a poisoned cached shell and keeps previous offline vers
  const sw=worker();
  await sw.lifecycle('install');
  const url=new URL('./app.mjs',scope).href;
- sw.versions.get('klarpunkt-shell-v22').get(url).headers.get=()=> 'text/html';
+ sw.versions.get(shellVersion).get(url).headers.get=()=> 'text/html';
  await assert.rejects(sw.lifecycle('activate'),/Incomplete offline shell/);
  assert.equal(sw.claimed,0);
  assert.deepEqual(sw.deleted,[]);
- assert.equal(sw.versions.get('klarpunkt-shell-v21').size,shell.length);
+ assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
 });
 test('redirected asset responses fail closed and are never persisted',async()=>{
  const sw=worker({networkResponse:req=>({
@@ -160,7 +163,7 @@ test('redirected asset responses fail closed and are never persisted',async()=>{
  const response=await sw.dispatch(sw.request('./app.mjs'));
  assert.deepEqual(response,{networkError:true});
  assert.equal(sw.putCalls,0);
- assert.equal(sw.versions.get('klarpunkt-shell-v22').size,0);
+ assert.equal(sw.versions.get(shellVersion).size,0);
 });
 test('opaque, mismatched-URL and failed network responses are never cached',async()=>{
  for(const response of [
@@ -179,7 +182,7 @@ test('valid same-origin response repairs one missing asset without caching URL v
  const response=await sw.dispatch(req);
  assert.equal(response.ok,true);
  assert.equal(sw.putCalls,1);
- assert.equal(sw.versions.get('klarpunkt-shell-v22').has(req.url),true);
+ assert.equal(sw.versions.get(shellVersion).has(req.url),true);
  await sw.dispatch(req);
  assert.equal(sw.networkCalls,1);
  assert.equal(sw.dispatch(sw.request('./app.mjs?version=2')),undefined);
@@ -190,7 +193,7 @@ test('failed runtime cache write does not prevent online delivery',async()=>{
  const response=await sw.dispatch(sw.request('./style.css'));
  assert.equal(response.ok,true);
  assert.equal(sw.putCalls,1);
- assert.equal(sw.versions.get('klarpunkt-shell-v22').size,0);
+ assert.equal(sw.versions.get(shellVersion).size,0);
 });
 
 
@@ -217,17 +220,17 @@ test('poisoned cached module is bypassed and replaced by trusted network respons
  const sw=worker(),req=sw.request('./app.mjs');
  await sw.lifecycle('install');
  const poisoned={ok:true,status:200,redirected:false,type:'basic',url:req.url,headers:{get:()=> 'text/html'}};
- sw.versions.get('klarpunkt-shell-v22').set(req.url,poisoned);
+ sw.versions.get(shellVersion).set(req.url,poisoned);
  const response=await sw.dispatch(req);
  assert.notEqual(response,poisoned);
  assert.equal(sw.networkCalls,1);
  assert.equal(sw.putCalls,1);
- assert.equal(sw.versions.get('klarpunkt-shell-v22').get(req.url),response);
+ assert.equal(sw.versions.get(shellVersion).get(req.url),response);
 });
 test('poisoned cached module is not served when the network fails',async()=>{
  const sw=worker({networkResponse:()=>{throw Error('Offline');}}),req=sw.request('./app.mjs');
  await sw.lifecycle('install');
- sw.versions.get('klarpunkt-shell-v22').set(req.url,{
+ sw.versions.get(shellVersion).set(req.url,{
   ok:true,status:200,redirected:false,type:'basic',url:req.url,headers:{get:()=> 'text/html'}
  });
  await assert.rejects(sw.dispatch(req),/Offline/);
@@ -237,22 +240,22 @@ test('poisoned cached HTML never executes and is replaced only by complete trust
  const sw=worker(),req=sw.request('./index.html',{mode:'navigate'});
  await sw.lifecycle('install');
  const poisoned={ok:true,status:200,redirected:false,type:'basic',url:req.url,headers:{get:()=> 'text/javascript'}};
- sw.versions.get('klarpunkt-shell-v22').set(req.url,poisoned);
+ sw.versions.get(shellVersion).set(req.url,poisoned);
  sw.setPrecacheFailure(true);
  assert.deepEqual(await sw.dispatch(req),{networkError:true},'Offline poisoned HTML must not execute');
- assert.equal(sw.versions.get('klarpunkt-shell-v22').get(req.url),poisoned,'Failed recovery must not overwrite cached HTML');
+ assert.equal(sw.versions.get(shellVersion).get(req.url),poisoned,'Failed recovery must not overwrite cached HTML');
  sw.setPrecacheFailure(false);
  const page=await sw.dispatch(req);
  assert.equal(page.headers.get('content-type'),'text/html');
  assert.notEqual(page,poisoned);
- assert.equal(sw.versions.get('klarpunkt-shell-v22').size,shell.length);
- assert.equal(sw.versions.get('klarpunkt-shell-v21').size,shell.length,'Old shell must survive recovery');
+ assert.equal(sw.versions.get(shellVersion).size,shell.length);
+ assert.equal(sw.versions.get(oldShellVersion).size,shell.length,'Old shell must survive recovery');
 });
 test('empty shell is recovered as a complete validated batch before navigation',async()=>{
  const sw=worker();
  const page=await sw.dispatch(sw.request('./index.html',{mode:'navigate'}));
  assert.equal(page.headers.get('content-type'),'text/html');
- assert.equal(sw.versions.get('klarpunkt-shell-v22').size,shell.length);
+ assert.equal(sw.versions.get(shellVersion).size,shell.length);
  assert.equal(sw.addAllCalls,1);
  assert.equal(sw.networkCalls,0,'Navigation must not mix cached and network assets');
  const offline=await sw.dispatch(sw.request('./index.html',{mode:'navigate'}));
@@ -262,23 +265,23 @@ test('empty shell is recovered as a complete validated batch before navigation',
 test('partially evicted shell is fully restored before cached HTML is served',async()=>{
  const sw=worker();
  await sw.lifecycle('install');
- sw.versions.get('klarpunkt-shell-v22').delete(new URL('./core.mjs',scope).href);
+ sw.versions.get(shellVersion).delete(new URL('./core.mjs',scope).href);
  const page=await sw.dispatch(sw.request('./index.html',{mode:'navigate'}));
  assert.equal(page.headers.get('content-type'),'text/html');
  assert.equal(sw.addAllCalls,2);
- assert.equal(sw.versions.get('klarpunkt-shell-v22').size,shell.length);
+ assert.equal(sw.versions.get(shellVersion).size,shell.length);
 });
 test('failed offline recovery fails closed and retains the previous shell',async()=>{
  const sw=worker({failPrecache:true});
  assert.deepEqual(await sw.dispatch(sw.request('./index.html',{mode:'navigate'})),{networkError:true});
- assert.equal(sw.versions.get('klarpunkt-shell-v21').size,shell.length);
+ assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
  assert.equal(sw.waiting,0);
  assert.deepEqual(sw.deleted,[]);
 });
 test('invalid MIME during recovery never exposes partial HTML',async()=>{
  const sw=worker({badPrecache:{path:'./app.mjs',mime:'text/html'}});
  assert.deepEqual(await sw.dispatch(sw.request('./index.html',{mode:'navigate'})),{networkError:true});
- assert.equal(sw.versions.get('klarpunkt-shell-v21').size,shell.length);
+ assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
  assert.equal(sw.waiting,0);
 });
 test('simultaneous navigation attempts share one recovery batch',async()=>{
@@ -293,7 +296,7 @@ test('simultaneous navigation attempts share one recovery batch',async()=>{
 test('transient offline recovery failure preserves cached entries and can retry online',async()=>{
  const sw=worker();
  await sw.lifecycle('install');
- const entries=sw.versions.get('klarpunkt-shell-v22');
+ const entries=sw.versions.get(shellVersion);
  entries.delete(new URL('./core.mjs',scope).href);
  const before=new Map(entries);
  sw.setPrecacheFailure(true);
@@ -313,13 +316,13 @@ test('empty shell recovers after a temporary outage without touching unrelated c
  const sw=worker({failPrecache:true});
  const req=sw.request('./index.html',{mode:'navigate'});
  assert.deepEqual(await sw.dispatch(req),{networkError:true});
- assert.equal(sw.versions.get('klarpunkt-shell-v22').size,0,'Atomic failure cannot leave partial shell');
+ assert.equal(sw.versions.get(shellVersion).size,0,'Atomic failure cannot leave partial shell');
  assert.equal(sw.versions.get('unrelated-app').size,0);
  sw.setPrecacheFailure(false);
  const page=await sw.dispatch(req);
  assert.equal(page.headers.get('content-type'),'text/html');
- assert.equal(sw.versions.get('klarpunkt-shell-v22').size,shell.length);
- assert.equal(sw.versions.get('klarpunkt-shell-v21').size,shell.length);
+ assert.equal(sw.versions.get(shellVersion).size,shell.length);
+ assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
 });
 
 test('partial HTTP 206 is rejected during runtime repair even when ok is true',async()=>{
@@ -347,7 +350,7 @@ test('poisoned HTML plus untrusted recovery fails closed without deleting old ca
  await assert.rejects(sw.lifecycle('install'),/Incomplete offline shell/);
  const req=sw.request('./index.html',{mode:'navigate'});
  assert.deepEqual(await sw.dispatch(req),{networkError:true});
- assert.equal(sw.versions.get('klarpunkt-shell-v21').size,shell.length);
+ assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
  assert.equal(sw.claimed,0);
 });
 
@@ -359,11 +362,11 @@ test('runtime cache repair completes its write before delivering an online asset
  await new Promise(resolve=>setImmediate(resolve));
  assert.equal(sw.putCalls,1,'Cache write must start for a trusted repair');
  assert.equal(delivered,false,'Browser must not end the fetch event before cache persistence');
- assert.equal(sw.versions.get('klarpunkt-shell-v22').size,0);
+ assert.equal(sw.versions.get(shellVersion).size,0);
  sw.releasePut();
  const response=await pending;
  assert.equal(response.ok,true);
- assert.equal(sw.versions.get('klarpunkt-shell-v22').get(req.url),response);
+ assert.equal(sw.versions.get(shellVersion).get(req.url),response);
  const offline=await sw.dispatch(req);
  assert.equal(offline,response,'The completed repair must be available without a second download');
  assert.equal(sw.networkCalls,1);
@@ -379,14 +382,14 @@ test('a delayed quota failure still delivers the trusted online response without
  sw.releasePut();
  const response=await pending;
  assert.equal(response.ok,true,'Quota failure must not block online usage');
- assert.equal(sw.versions.get('klarpunkt-shell-v22').size,0,'Failed write cannot create a partial cache entry');
+ assert.equal(sw.versions.get(shellVersion).size,0,'Failed write cannot create a partial cache entry');
 });
 
 test('long offline session reuses a complete shell without network or cache writes',async()=>{
  const sw=worker({networkResponse:()=>{throw Error('Network unavailable');}});
  await sw.lifecycle('install');
  await sw.lifecycle('activate');
- const initialSize=sw.versions.get('klarpunkt-shell-v22').size;
+ const initialSize=sw.versions.get(shellVersion).size;
  for(let i=0;i<120;i++){
   const path=i%3===0?'./app.mjs':i%3===1?'./style.css':'./core.mjs';
   const response=await sw.dispatch(sw.request(path));
@@ -399,5 +402,5 @@ test('long offline session reuses a complete shell without network or cache writ
  assert.equal(sw.networkCalls,0,'A healthy long-running offline session must not fetch');
  assert.equal(sw.putCalls,0,'Healthy cached assets must not be rewritten');
  assert.equal(sw.addAllCalls,1,'No recovery should be needed for a healthy shell');
- assert.equal(sw.versions.get('klarpunkt-shell-v22').size,initialSize);
+ assert.equal(sw.versions.get(shellVersion).size,initialSize);
 });
