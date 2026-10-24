@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v11';
+const VERSION='klarpunkt-shell-v12';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Only known shell assets may be cached; no arbitrary in-scope responses or query variants.
 const STATIC_PATHS=new Set(FILES.map(path=>new URL(path,self.registration.scope).pathname));

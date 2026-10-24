@@ -80,3 +80,21 @@ input[type=range]{min-height:44px}
  .rank-meta,.disclaimer{font-size:12px}
  .rank-item,.winner,.explainer{break-inside:avoid}
 }
+
+/* Sprint 13: 320-CSS-pixel reflow (400%-zoom-equivalent geometry) and skip-target focus. */
+#workspace:focus-visible{outline:3px solid #2383c1;outline-offset:3px}
+@media(max-width:400px){
+ .shell,.columns,.editor,.insights,.panel,.archive,.actionbar,.brand,.hero,.hero-actions{min-width:0}
+ .actionbar>.save-status{flex-basis:100%;overflow-wrap:anywhere}
+ .actionbuttons,.historybuttons{width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+ .actionbuttons .button,.historybuttons .button{min-width:0;white-space:normal;overflow-wrap:anywhere}
+ .archive-tools{display:grid;grid-template-columns:minmax(0,1fr);width:100%}
+ .archive-tools .button{width:100%;white-space:normal;overflow-wrap:anywhere}
+ .archive-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}
+ .archive-actions .button{min-width:0;white-space:normal;overflow-wrap:anywhere}
+ .archive-info,.rating-label,.range-control label,.rank-heading span,.brand{overflow-wrap:anywhere}
+ .hero h1{overflow-wrap:anywhere}
+}
+
+/* User-supplied names also appear inside explanatory paragraphs. */
+.explainer p,.winner strong,.rank-heading span,.rating-label{overflow-wrap:anywhere;word-break:normal}

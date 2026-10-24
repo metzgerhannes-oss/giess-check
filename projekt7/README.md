@@ -60,3 +60,10 @@ Der aktive Arbeitsstand wird **vor** der optionalen zusätzlichen lokalen Rückf
 - Zusatztexte und Bedienelemente sind größer lesbar; Kopfzeile, Regler und Aktionen umbrechen bei engen Viewports.
 - Druckbericht enthält aktuelle Projektüberschrift und Druckdatum.
 - Chromium-Meilenstein prüft 320-CSS-Pixel-Reflow, Fokusziel, Reihenfolge und Drucktitel. Kein Ersatz für VoiceOver auf echter iPhone-Hardware.
+
+
+### Release-Härtung: Reflow und Wiederherstellung (Sprint 13)
+
+Die Browser-Meilensteinprüfung simuliert zusätzlich die für WCAG-Reflow relevante Breite von 320 CSS-Pixeln (geometrisch vergleichbar mit 400 % Zoom bei 1280 CSS-Pixeln Ausgangsbreite) mit langen Nutzereingaben. Sie prüft fehlenden horizontalen Überlauf, die Bedienbarkeit der Archiv-Aktionen, abgewiesene beschädigte JSON-Dateien und einen simulierten Fehler beim primären Browser-Schreibzugriff. Ergänzende Node-Tests prüfen maximale zulässige Datenmengen, Wiederherstellung aus Sicherungen, konkurrierende Schreibvorgänge und Quota-Fehler. Die CI-Pflichtprüfung bleibt ein einzelnes gebündeltes Gate; der Chromium-Meilenstein läuft nur bei ausdrücklich markierten PRs.
+
+**Grenzen:** Emulierte Viewports ersetzen weder einen echten Desktop-Browserzoom-Test noch einen Hardwaretest auf iPhone/Safari. Browser-Speicher ist nicht transaktional und kann vom Gerät gelöscht werden; externe JSON-Dateisicherungen bleiben erforderlich.
