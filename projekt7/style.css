@@ -95,3 +95,6 @@ input[type=range]{min-height:44px}
  .archive-info,.rating-label,.range-control label,.rank-heading span,.brand{overflow-wrap:anywhere}
  .hero h1{overflow-wrap:anywhere}
 }
+
+/* User-supplied names also appear inside explanatory paragraphs. */
+.explainer p,.winner strong,.rank-heading span,.rating-label{overflow-wrap:anywhere;word-break:normal}

@@ -118,3 +118,5 @@ assert '@media(max-width:400px)' in css
 assert '#workspace:focus-visible' in css
 assert (root / 'test/release-hardening.test.mjs').is_file()
 assert 'Primary write failure must preserve persisted data' in (root / 'test/browser-smoke.mjs').read_text(encoding='utf-8')
+
+assert '.explainer p,.winner strong,.rank-heading span,.rating-label{overflow-wrap:anywhere' in css
