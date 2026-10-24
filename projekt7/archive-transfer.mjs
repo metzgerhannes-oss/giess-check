@@ -1,5 +1,5 @@
 import {validateProject} from './core.mjs';
-import {ARCHIVE_CAP,ARCHIVE_KEY,MAX_ARCHIVE_BYTES,readArchive,assertArchiveVersion} from './archive.mjs';
+import {ARCHIVE_CAP,ARCHIVE_KEY,MAX_ARCHIVE_BYTES,readArchive,assertArchiveVersion,verifyArchiveWrite} from './archive.mjs';
 
 // Independent portable archive. Import replaces only the archive key, never
 // the active project or its backup. No network calls or dependencies.
@@ -59,5 +59,6 @@ export function importArchiveBackup(storage,parsed,expectedRaw=undefined){
  assertArchiveVersion(storage,baseline);
  // One atomic localStorage.setItem; quota errors preserve the previous archive.
  storage.setItem(ARCHIVE_KEY,payload);
+ verifyArchiveWrite(storage,payload);
  return parsed.items.length;
 }
