@@ -58,7 +58,7 @@ export function auditOfflineGraph(root,overrides={}){
  }
  const cached=new Set();
  for(const entry of files){
-  if(entry==='./'){cached.add('index.html');continue;}
+  if(entry==='./')continue; // Root and index.html intentionally share a document.
   if(!entry.startsWith('./')||/[?#]/.test(entry)){errors.push('Unsafe precache entry: '+entry);continue;}
   const path=entry.slice(2);
   if(cached.has(path))errors.push('Duplicate precache entry: '+entry);
