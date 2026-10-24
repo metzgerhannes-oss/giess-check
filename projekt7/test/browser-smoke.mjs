@@ -106,6 +106,8 @@ try{
  // Desktop 400% zoom of a 1280px window yields roughly 320 CSS px.
  // Exercise desktop media queries with maximal-length user-controlled labels.
  await send('Emulation.setDeviceMetricsOverride',{width:320,height:800,deviceScaleFactor:1,mobile:false});
+ await send('Emulation.setPageScaleFactor',{pageScaleFactor:1});
+ await navigate(url);
  await evaluate(`(()=>{
   const o=document.querySelector('#options .option-entry input');
   o.value='W'.repeat(80);o.dispatchEvent(new Event('input',{bubbles:true}));
