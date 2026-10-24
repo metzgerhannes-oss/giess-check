@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v20';
+const VERSION='klarpunkt-shell-v21';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Cache only this app's immutable shell paths, never arbitrary data or URL variants.
 const STATIC_PATHS=new Set(FILES.map(path=>new URL(path,self.registration.scope).pathname));
@@ -18,9 +18,11 @@ function trustedShellAsset(response,path){
  // Vary key, represent partial content, or are marked as downloads.
  const headers=response.headers;
  const cacheControl=headers?.get('cache-control')||'';
- if(/(?:^|,)\s*no-store(?:\s*(?:,|$))/i.test(cacheControl))return false;
+ // A static offline shell must not persist a response requiring revalidation
+ // or a response scoped to a particular user's session.
+ if(cacheControl.split(',').some(value=>/^(?:no-store|no-cache|private)(?:\s*(?:=|$))/i.test(value.trim())))return false;
  const vary=headers?.get('vary')||'';
- if(vary.split(',').some(value=>value.trim()==='*'))return false;
+ if(vary.split(',').some(value=>/^(?:\*|cookie|authorization|proxy-authorization|origin)$/i.test(value.trim())))return false;
  if(/^\s*bytes\s+\d+-\d+\/(?:\d+|\*)/i.test(headers?.get('content-range')||''))return false;
  if(/^\s*attachment(?:\s*;|$)/i.test(headers?.get('content-disposition')||''))return false;
  if(/^\s*0\s*$/.test(headers?.get('content-length')||''))return false;
@@ -71,10 +73,10 @@ self.addEventListener('fetch',event=>{
  if(request.method!=='GET')return;
  // Do not collapse authenticated or byte-range requests into a public
  // uncredentialed shell-cache response. Let the network handle them.
- if(request.headers?.has?.('authorization')||request.headers?.has?.('range'))return;
+ if(request.cache==='no-store'||['authorization','cookie','range','if-range','if-none-match','if-modified-since','if-match','if-unmodified-since'].some(name=>request.headers?.has?.(name)))return;
  const url=new URL(request.url);
  const scope=new URL(self.registration.scope);
- if(url.origin!==scope.origin||!url.pathname.startsWith(scope.pathname))return;
+ if(url.origin!==scope.origin||!url.pathname.startsWith(scope.pathname)||url.search)return;
  if(request.mode==='navigate'){
   const index=new URL('./index.html',scope);
   // Version-pinned navigation prevents fresh HTML with stale cached JS/CSS.
@@ -94,7 +96,7 @@ self.addEventListener('fetch',event=>{
   }));
   return;
  }
- if(url.search||!STATIC_PATHS.has(url.pathname))return;
+ if(!STATIC_PATHS.has(url.pathname))return;
  event.respondWith(caches.open(VERSION).then(async cache=>{
   const shellPath=PATH_BY_PATHNAME.get(url.pathname);
   const hit=await cache.match(request);
