@@ -1,13 +1,28 @@
-const VERSION='klarpunkt-shell-v13';
+const VERSION='klarpunkt-shell-v14';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
-// Only known shell assets may be cached; no arbitrary in-scope responses or query variants.
+// Cache only this app's immutable shell paths, never arbitrary data or URL variants.
 const STATIC_PATHS=new Set(FILES.map(path=>new URL(path,self.registration.scope).pathname));
+async function completeShell(cache){
+ // Cache Storage can be evicted independently of service worker lifecycle.
+ // Do not replace a working older shell with a partially available new shell.
+ const matches=await Promise.all(FILES.map(path=>cache.match(path)));
+ return matches.every(Boolean);
+}
 self.addEventListener('install',event=>{
- // A failed precache prevents activation, preserving the previous complete shell.
- event.waitUntil(caches.open(VERSION).then(cache=>cache.addAll(FILES)).then(()=>self.skipWaiting()));
+ event.waitUntil(caches.open(VERSION).then(async cache=>{
+  await cache.addAll(FILES);
+  if(!(await completeShell(cache)))throw new Error('Incomplete offline shell after precache');
+  await self.skipWaiting();
+ }));
 });
 self.addEventListener('activate',event=>{
- event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('klarpunkt-shell-')&&key!==VERSION).map(key=>caches.delete(key)))).then(()=>self.clients.claim()));
+ event.waitUntil(caches.open(VERSION).then(async cache=>{
+  // Never delete previous working offline versions if the new shell was evicted.
+  if(!(await completeShell(cache)))throw new Error('Incomplete offline shell at activation');
+  const keys=await caches.keys();
+  await Promise.all(keys.filter(key=>key.startsWith('klarpunkt-shell-')&&key!==VERSION).map(key=>caches.delete(key)));
+  await self.clients.claim();
+ }));
 });
 self.addEventListener('fetch',event=>{
  const request=event.request;
@@ -24,7 +39,11 @@ self.addEventListener('fetch',event=>{
  }
  if(url.search||!STATIC_PATHS.has(url.pathname))return;
  event.respondWith(caches.open(VERSION).then(cache=>cache.match(request).then(hit=>hit||fetch(request).then(response=>{
-  if(response.ok){const copy=response.clone();cache.put(request,copy).catch(()=>{});}
+  // A captive portal, external redirect, opaque response or error page must
+  // never replace a missing trusted asset in the persistent offline shell.
+  if(response.ok&&!response.redirected&&(response.type==='basic'||response.type==='default')&&response.url===request.url){
+   const copy=response.clone();cache.put(request,copy).catch(()=>{});
+  }
   return response;
  }))));
 });

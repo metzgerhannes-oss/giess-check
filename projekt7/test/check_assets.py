@@ -81,7 +81,7 @@ for fg,bg in [('#1c2b3a','#ffffff'),('#536272','#ffffff'),('#a7e8d9','#1e4967'),
 assert 'id="reload-storage"' in html
 assert 'STORAGE_CONFLICT' in (root / "storage.mjs").read_text(encoding="utf-8")
 assert "event.key===PRIMARY_KEY" in app
-assert "const VERSION='klarpunkt-shell-v13'" in sw
+assert "const VERSION='klarpunkt-shell-v14'" in sw
 assert "cache.match('./index.html')" in sw, "Version-consistent navigation required"
 assert "caches.open(VERSION).then(cache=>cache.match(request)" in sw, "Do not mix caches across apps"
 
@@ -120,3 +120,9 @@ assert (root / 'test/release-hardening.test.mjs').is_file()
 assert 'Primary write failure must preserve persisted data' in (root / 'test/browser-smoke.mjs').read_text(encoding='utf-8')
 
 assert '.explainer p,.winner strong,.rank-heading span,.rating-label{overflow-wrap:anywhere' in css
+
+# Sprint 15: a complete offline shell is required before install/activation.
+assert 'completeShell(cache)' in sw
+assert 'Incomplete offline shell' in sw
+assert "response.type==='basic'" in sw and 'response.url===request.url' in sw
+assert (root / 'test/sw-integrity.test.mjs').is_file()
