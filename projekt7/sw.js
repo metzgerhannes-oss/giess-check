@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v16';
+const VERSION='klarpunkt-shell-v17';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Cache only this app's immutable shell paths, never arbitrary data or URL variants.
 const STATIC_PATHS=new Set(FILES.map(path=>new URL(path,self.registration.scope).pathname));
@@ -24,6 +24,20 @@ async function completeShell(cache){
  // Never replace a working older shell with a partial or poisoned cache.
  const matches=await Promise.all(FILES.map(path=>cache.match(path)));
  return matches.every((response,index)=>trustedShellAsset(response,FILES[index]));
+}
+// Recover an evicted shell as one complete batch. Cache.addAll is atomic in
+// browsers: a failed download cannot replace an existing partial/working set.
+// Navigation is served only after all required files pass the same trust gate.
+let recoveryInFlight=null;
+async function recoverShell(cache){
+ if(!recoveryInFlight)recoveryInFlight=(async()=>{
+  await cache.addAll(FILES);
+  if(!(await completeShell(cache)))throw new Error('Incomplete offline shell after recovery');
+  return cache.match('./index.html');
+ })();
+ const active=recoveryInFlight;
+ try{return await active;}
+ finally{if(recoveryInFlight===active)recoveryInFlight=null;}
 }
 self.addEventListener('install',event=>{
  event.waitUntil(caches.open(VERSION).then(async cache=>{
@@ -53,11 +67,17 @@ self.addEventListener('fetch',event=>{
   if(url.pathname!==scope.pathname&&url.pathname!==index.pathname)return;
   event.respondWith(caches.open(VERSION).then(async cache=>{
    const hit=await cache.match('./index.html');
-   // Never execute a poisoned HTML entry, even while online.
-   if(hit)return trustedShellAsset(hit,'./index.html')?hit:Response.error();
-   const response=await fetch(request);
-   const path=url.pathname===scope.pathname?'./':'./index.html';
-   return trustedShellAsset(response,path)?response:Response.error();
+   // Poisoned cached HTML must never be executed or silently repaired.
+   if(hit&&!trustedShellAsset(hit,'./index.html'))return Response.error();
+   // An index alone is not an offline app: check every asset before serving it.
+   if(hit&&await completeShell(cache))return hit;
+   try{
+    const restored=await recoverShell(cache);
+    return trustedShellAsset(restored,'./index.html')?restored:Response.error();
+   }catch{
+    // Fail closed: partial cached assets could mix incompatible releases.
+    return Response.error();
+   }
   }));
   return;
  }

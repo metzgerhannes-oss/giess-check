@@ -5,9 +5,13 @@ import {runInNewContext} from 'node:vm';
 
 const source=readFileSync(new URL('../sw.js',import.meta.url),'utf8');
 const scope='https://example.test/giess-check/projekt7/';
+const shell=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
+const mime=path=>path==='./'||path.endsWith('.html')?'text/html':
+ path.endsWith('.css')?'text/css':path.endsWith('.mjs')?'text/javascript':
+ path.endsWith('.svg')?'image/svg+xml':path.endsWith('.png')?'image/png':'application/manifest+json';
 const trusted=(path,extra={})=>({
  ok:true,redirected:false,type:'basic',url:new URL(path,scope).href,
- headers:{get:()=>path.endsWith('.html')?'text/html':path.endsWith('.css')?'text/css':'text/javascript'},
+ headers:{get:()=>mime(path)},
  cached:true,...extra
 });
 function createWorker(){
@@ -57,6 +61,7 @@ test('external origins, other apps and writes are never intercepted',()=>{
 });
 test('version-pinned navigation uses cached index only inside app',async()=>{
  const sw=createWorker(),cached=trusted('./index.html');
+ for(const path of shell)sw.entries.set(new URL(path,scope).href,trusted(path));
  sw.entries.set(scope+'index.html',cached);
  assert.equal(await sw.dispatch(sw.request(scope,{mode:'navigate'})),cached);
  assert.equal(await sw.dispatch(sw.request(scope+'index.html',{mode:'navigate'})),cached);
