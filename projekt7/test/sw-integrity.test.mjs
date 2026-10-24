@@ -106,7 +106,7 @@ test('partial precache fails closed rather than installing a broken shell',async
 test('activation with evicted current asset preserves older complete shell',async()=>{
  const sw=worker();
  await sw.lifecycle('install');
- sw.versions.get('klarpunkt-shell-v16').delete(new URL('./app.mjs',scope).href);
+ sw.versions.get('klarpunkt-shell-v17').delete(new URL('./app.mjs',scope).href);
  await assert.rejects(sw.lifecycle('activate'),/Incomplete offline shell/);
  assert.equal(sw.claimed,0);
  assert.deepEqual(sw.deleted,[]);
