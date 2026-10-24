@@ -3,6 +3,7 @@ import {inspectStorage,saveProject,PRIMARY_KEY} from './storage.mjs';
 import {createHistory} from './history.mjs';
 import {readArchive,addSnapshot,removeSnapshot,ARCHIVE_CAP,ARCHIVE_KEY} from './archive.mjs';
 import {serializeBackup,parseBackupText,MAX_BACKUP_BYTES} from './backup.mjs';
+import {serializeArchiveBackup,parseArchiveBackup,importArchiveBackup,MAX_ARCHIVE_FILE_BYTES} from './archive-transfer.mjs';
 
 const byId=id=>document.getElementById(id);
 const status=byId('save-status');
@@ -308,6 +309,31 @@ byId('archive-save').addEventListener('click',()=>{
  catch(err){
   if(err?.code==='ARCHIVE_CONFLICT'){renderArchive();status.textContent='Archiv inzwischen geändert. Liste aktualisiert; bitte erneut versuchen.';}
   else status.textContent=err?.message||'Lokales Archiv konnte nicht gespeichert werden.';
+ }
+});
+byId('archive-export').addEventListener('click',()=>{
+ try{
+  const data=serializeArchiveBackup(readArchive(browserStore()));
+  const url=URL.createObjectURL(new Blob([data],{type:'application/json'}));
+  const link=make('a');link.href=url;link.download='klarpunkt-archiv-'+new Date().toISOString().slice(0,10)+'.json';
+  document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
+  status.textContent='Archivdatei erstellt. Bitte außerhalb des Browsers aufbewahren.';
+ }catch(err){status.textContent=err?.message||'Archiv konnte nicht exportiert werden.';}
+});
+byId('archive-import').addEventListener('click',()=>byId('archive-import-file').click());
+byId('archive-import-file').addEventListener('change',async event=>{
+ const file=event.target.files?.[0];event.target.value='';
+ if(!file)return;
+ if(file.size>MAX_ARCHIVE_FILE_BYTES){alert('Archivdatei zu groß (maximal 350 KB).');return;}
+ try{
+  const incoming=parseArchiveBackup(await file.text());
+  if(!confirm('Das bisherige lokale Archiv durch '+incoming.items.length+' importierte Stände ERSETZEN? Der aktuelle Arbeitsstand bleibt unverändert. Bitte das bisherige Archiv vorher als Datei sichern.'))return;
+  const count=importArchiveBackup(browserStore(),incoming,expectedArchiveRaw);
+  renderArchive();
+  status.textContent=count+' Archivstände importiert. Aktueller Arbeitsstand unverändert.';
+ }catch(err){
+  if(err?.code==='ARCHIVE_CONFLICT'){renderArchive();status.textContent='Archiv inzwischen geändert. Liste aktualisiert; Import bitte erneut starten.';}
+  else alert('Archiv konnte nicht eingelesen werden: '+(err?.message||'ungültige Datei'));
  }
 });
 byId('reload-storage').addEventListener('click',()=>{

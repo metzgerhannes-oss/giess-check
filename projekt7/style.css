@@ -24,3 +24,7 @@ input[type=range]{min-height:44px}
 .conflict-reload:not([hidden]){border:2px solid #a83b2d;background:#fff3f1;color:#80251a;font-weight:800}
 [hidden]{display:none!important}
 @media print{.conflict-reload{display:none!important}}
+
+.archive-tools{display:flex;flex-wrap:wrap;gap:7px}
+@media(max-width:640px){.archive-tools{width:100%}.archive-tools .button{flex:1;min-width:0}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}

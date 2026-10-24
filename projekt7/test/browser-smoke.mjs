@@ -96,6 +96,7 @@ try{
  assert.equal(await evaluate("document.querySelectorAll('#results .rank-item').length>=2"),true);
  assert.equal(await evaluate("document.querySelector('link[rel=apple-touch-icon]').getAttribute('href')"),'./apple-touch-icon.png');
  assert.equal(await evaluate("document.querySelector('.install-help summary')!==null"),true);
+ assert.equal(await evaluate("!!document.querySelector('#archive-export')&&!!document.querySelector('#archive-import')"),true);
  assert.equal(await evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),true,'Horizontal overflow on mobile');
  assert.equal(await evaluate("[...document.querySelectorAll('button:not(:disabled)')].filter(b=>b.getClientRects().length>0).every(b=>b.getBoundingClientRect().height>=40)"),true,'Touch targets under 40px');
  await evaluate("document.querySelector('#project-title').value='Offline-Test';document.querySelector('#project-title').dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('#archive-save').click()");
@@ -204,10 +205,10 @@ try{
  // Simulate a deployment and verify the new shell survives a cold offline reload.
  await send('Network.emulateNetworkConditions',{offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1});
  const sourceWorker=await readFile(join(root,'sw.js'),'utf8');
- workerOverride=sourceWorker.replace("'klarpunkt-shell-v7'","'klarpunkt-shell-v7-smoke'");
+ workerOverride=sourceWorker.replace("'klarpunkt-shell-v8'","'klarpunkt-shell-v8-smoke'");
  assert.notEqual(workerOverride,sourceWorker,'Worker version marker missing');
  await evaluate("navigator.serviceWorker.ready.then(reg=>reg.update().then(()=>true))");
- await until("caches.keys().then(keys=>keys.includes('klarpunkt-shell-v7-smoke')&&!keys.includes('klarpunkt-shell-v7'))");
+ await until("caches.keys().then(keys=>keys.includes('klarpunkt-shell-v8-smoke')&&!keys.includes('klarpunkt-shell-v8'))");
  await send('Network.emulateNetworkConditions',{offline:true,latency:0,downloadThroughput:0,uploadThroughput:0});
  await navigate(url);
  assert.equal(await evaluate("document.querySelector('#project-title').value"),'Ersttab neu','Offline update lost local state');
