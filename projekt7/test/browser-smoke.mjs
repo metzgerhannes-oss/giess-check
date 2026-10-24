@@ -308,10 +308,10 @@ try{
  // Simulate a deployment and verify the new shell survives a cold offline reload.
  await send('Network.emulateNetworkConditions',{offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1});
  const sourceWorker=await readFile(join(root,'sw.js'),'utf8');
- workerOverride=sourceWorker.replace("'klarpunkt-shell-v12'","'klarpunkt-shell-v12-smoke'");
+ workerOverride=sourceWorker.replace("'klarpunkt-shell-v13'","'klarpunkt-shell-v13-smoke'");
  assert.notEqual(workerOverride,sourceWorker,'Worker version marker missing');
  await evaluate("navigator.serviceWorker.ready.then(reg=>reg.update().then(()=>true))");
- await until("caches.keys().then(keys=>keys.includes('klarpunkt-shell-v12-smoke')&&!keys.includes('klarpunkt-shell-v12'))");
+ await until("caches.keys().then(keys=>keys.includes('klarpunkt-shell-v13-smoke')&&!keys.includes('klarpunkt-shell-v13'))");
  await send('Network.emulateNetworkConditions',{offline:true,latency:0,downloadThroughput:0,uploadThroughput:0});
  await navigate(url);
  assert.equal(await evaluate("document.querySelector('#project-title').value"),'Ersttab neu','Offline update lost local state');

@@ -6,20 +6,26 @@ function decode(raw){
 }
 export function inspectStorage(storage){
  if(!storage)return {state:'unavailable',project:starterProject(),primaryRaw:undefined};
- try{
-  const primary=storage.getItem(PRIMARY_KEY);
-  const backup=storage.getItem(BACKUP_KEY);
-  if(primary===null&&backup===null)return {state:'new',project:starterProject(),primaryRaw:primary};
+ let primary;
+ try{primary=storage.getItem(PRIMARY_KEY);}
+ catch{return {state:'unavailable',project:starterProject(),primaryRaw:undefined};}
+ // The active project is authoritative. A denied optional-backup read must not
+ // hide a healthy primary or make the app appear empty.
+ if(primary!==null){
   try{
    const value=decode(primary);
    if(value)return {state:'ok',project:value,primaryRaw:primary};
   }catch{}
-  try{
-   const value=decode(backup);
-   if(value)return {state:'recovered',project:value,primaryRaw:primary};
-  }catch{}
-  return {state:'damaged',project:starterProject(),primaryRaw:primary};
- }catch{return {state:'unavailable',project:starterProject(),primaryRaw:undefined};}
+ }
+ let backup;
+ try{backup=storage.getItem(BACKUP_KEY);}
+ catch{return {state:'unavailable',project:starterProject(),primaryRaw:primary};}
+ if(primary===null&&backup===null)return {state:'new',project:starterProject(),primaryRaw:primary};
+ try{
+  const value=decode(backup);
+  if(value)return {state:'recovered',project:value,primaryRaw:primary};
+ }catch{}
+ return {state:'damaged',project:starterProject(),primaryRaw:primary};
 }
 export function saveProject(storage,project,override=false,expectedPrimaryRaw=undefined,onBackupFailure=null){
  const clean=validateProject(project);
@@ -30,7 +36,6 @@ export function saveProject(storage,project,override=false,expectedPrimaryRaw=un
   error.code='STORAGE_CONFLICT';
   throw error;
  }
- const previousBackup=storage.getItem(BACKUP_KEY);
  let last=null;
  if(current!==null){
   try{last=decode(current);}
@@ -39,10 +44,20 @@ export function saveProject(storage,project,override=false,expectedPrimaryRaw=un
   }
  }
  const nextRaw=JSON.stringify(clean);
+ let backupRaw=null;
+ if(last){
+  // A valid primary is sufficient to produce a recovery copy. Never require
+  // permission to read an optional backup before committing valid active data.
+  backupRaw=JSON.stringify(last);
+ }else{
+  // No valid primary: read the existing backup before any write. If access is
+  // denied, do not hide a potentially recoverable copy behind a new primary.
+  const previousBackup=storage.getItem(BACKUP_KEY);
+  if(current===null&&previousBackup===null)backupRaw=nextRaw;
+ }
  // Save the active version first: a failed primary write never changes backup.
  // Separate localStorage keys are not an atomic transaction.
  storage.setItem(PRIMARY_KEY,nextRaw);
- const backupRaw=last?JSON.stringify(last):(current===null&&previousBackup===null?nextRaw:null);
  if(backupRaw!==null){
   try{storage.setItem(BACKUP_KEY,backupRaw);}
   catch(error){
