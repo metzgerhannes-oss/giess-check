@@ -80,8 +80,9 @@ for fg,bg in [('#1c2b3a','#ffffff'),('#536272','#ffffff'),('#a7e8d9','#1e4967'),
 
 assert 'id="reload-storage"' in html
 assert 'STORAGE_CONFLICT' in (root / "storage.mjs").read_text(encoding="utf-8")
-assert "event.key===PRIMARY_KEY" in app
-assert "const VERSION='klarpunkt-shell-v22'" in sw
+assert "storageEventConflicts(event.key,event.newValue,expectedPrimaryRaw)" in app
+assert "key===null" in (root / "storage.mjs").read_text(encoding="utf-8")
+assert re.search(r"^const VERSION='klarpunkt-shell-v[0-9]+';", sw, re.M)
 assert "cache.match('./index.html')" in sw, "Version-consistent navigation required"
 assert "caches.open(VERSION).then(async cache=>" in sw, "Do not mix caches across apps"
 

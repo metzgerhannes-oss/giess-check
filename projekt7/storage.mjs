@@ -1,8 +1,15 @@
 import {starterProject,validateProject} from './core.mjs';
+import {MAX_BACKUP_BYTES} from './backup.mjs';
 export const PRIMARY_KEY='klarpunkt.project.v1';
 export const BACKUP_KEY='klarpunkt.project.backup.v1';
+// A corrupt browser key must not force unbounded JSON parsing or make a
+// valid bounded recovery copy inaccessible. Keep the same limit as file backup.
 function decode(raw){
- return raw===null?null:validateProject(JSON.parse(raw));
+ if(raw===null)return null;
+ if(typeof raw!=='string'||raw.length>MAX_BACKUP_BYTES||new TextEncoder().encode(raw).byteLength>MAX_BACKUP_BYTES){
+  throw new Error('Lokaler Projektstand überschreitet die sichere Größe.');
+ }
+ return validateProject(JSON.parse(raw));
 }
 export function inspectStorage(storage){
  if(!storage)return {state:'unavailable',project:starterProject(),primaryRaw:undefined};
@@ -44,6 +51,7 @@ export function saveProject(storage,project,override=false,expectedPrimaryRaw=un
   }
  }
  const nextRaw=JSON.stringify(clean);
+ if(new TextEncoder().encode(nextRaw).byteLength>MAX_BACKUP_BYTES)throw new Error('Projekt überschreitet die sichere Speichergröße.');
  let backupRaw=null;
  let seedBackup=false;
  if(last){
@@ -106,4 +114,10 @@ export function inspectPrimaryRevision(storage,expectedRaw){
  catch{return 'unavailable';}
  if(expectedRaw===undefined)return 'unverified';
  return current===expectedRaw?'unchanged':'changed';
+}
+
+// A storage.clear() event has key=null and newValue=null. It must invalidate
+// a tab even when that tab originally observed an empty primary key.
+export function storageEventConflicts(key,newValue,expectedRaw){
+ return key===null||(key===PRIMARY_KEY&&newValue!==expectedRaw);
 }
