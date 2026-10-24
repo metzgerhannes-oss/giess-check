@@ -308,6 +308,32 @@ try{
  assert.equal(await evaluate("JSON.parse(localStorage.getItem('klarpunkt.archive.v1')).items.length"),2);
  await send('Target.closeTarget',{targetId:newTab.targetId});
  ws2.close();ws2=null;
+ stage='resumed-tab revision and archive reconciliation';
+ // Same-tab writes intentionally emit no native storage event: emulate a
+ // background tab whose event was lost, then resume via window focus.
+ const missed=await evaluate(`(()=>{
+  const key='klarpunkt.project.v1',old=localStorage.getItem(key);
+  const incoming={...JSON.parse(old),title:'Hintergrundänderung'};
+  localStorage.setItem(key,JSON.stringify(incoming));
+  window.dispatchEvent(new Event('focus'));
+  const warned=!document.querySelector('#reload-storage').hidden;
+  const input=document.querySelector('#project-title');
+  input.value='Veraltete Änderung';input.dispatchEvent(new Event('input',{bubbles:true}));
+  return {warned,persisted:JSON.parse(localStorage.getItem(key)).title};
+ })()`);
+ assert.deepEqual(missed,{warned:true,persisted:'Hintergrundänderung'},'Missed storage event must not allow a stale overwrite');
+ await evaluate("window.confirm=()=>true;document.querySelector('#reload-storage').click()");
+ await until("document.querySelector('#project-title').value==='Hintergrundänderung'");
+ const refreshedArchive=await evaluate(`(()=>{
+  const key='klarpunkt.archive.v1',archive=JSON.parse(localStorage.getItem(key));
+  archive.items[0].project.title='Extern archiviert';
+  localStorage.setItem(key,JSON.stringify(archive));
+  window.dispatchEvent(new Event('pageshow'));
+  return document.querySelector('#archive-list').textContent.includes('Extern archiviert');
+ })()`);
+ assert.equal(refreshedArchive,true,'Resumed tab must refresh stale archive view');
+ await evaluate("document.querySelector('#project-title').value='Ersttab neu';document.querySelector('#project-title').dispatchEvent(new Event('input',{bubbles:true}))");
+ assert.equal(await evaluate("JSON.parse(localStorage.getItem('klarpunkt.project.v1')).title"),'Ersttab neu');
  await until("navigator.serviceWorker && navigator.serviceWorker.ready.then(()=>true)");
  await navigate(url);
  await until('!!navigator.serviceWorker.controller');

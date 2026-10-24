@@ -20,7 +20,7 @@ assert manifest["scope"] == "./"
 assert manifest["display"] == "standalone"
 assert "fetch(request)" in sw
 assert 'storage.mjs' in sw and 'history.mjs' in sw and 'unsaved.mjs' in sw and 'archive.mjs' in sw and 'archive-transfer.mjs' in sw and 'backup.mjs' in sw, "Offline cache must include required app modules"
-assert "import {inspectStorage,saveProject,PRIMARY_KEY} from './storage.mjs'" in app
+assert "import {inspectStorage,saveProject,inspectPrimaryRevision,PRIMARY_KEY} from './storage.mjs'" in app
 assert "if(initial.state==='new')save(false);" in app, "Never overwrite corrupted storage at startup"
 
 required = ["index.html", "style.css", "app.mjs", "core.mjs", "icon.svg",
@@ -81,7 +81,7 @@ for fg,bg in [('#1c2b3a','#ffffff'),('#536272','#ffffff'),('#a7e8d9','#1e4967'),
 assert 'id="reload-storage"' in html
 assert 'STORAGE_CONFLICT' in (root / "storage.mjs").read_text(encoding="utf-8")
 assert "event.key===PRIMARY_KEY" in app
-assert "const VERSION='klarpunkt-shell-v21'" in sw
+assert "const VERSION='klarpunkt-shell-v22'" in sw
 assert "cache.match('./index.html')" in sw, "Version-consistent navigation required"
 assert "caches.open(VERSION).then(async cache=>" in sw, "Do not mix caches across apps"
 
@@ -137,3 +137,9 @@ assert 'await cache.addAll(FILES)' in sw, "Offline recovery must be all-or-nothi
 assert 'response.status!==200' in sw
 assert 'if(!trustedShellAsset(response,shellPath))return Response.error()' in sw
 assert "hit&&trustedShellAsset(hit,'./index.html')&&await completeShell(cache)" in sw
+
+# Sprint 26: unknown revisions must never be overwritten on resumed tabs.
+assert 'if(expectedPrimaryRaw===undefined)' in app
+assert "window.addEventListener('focus',reconcileOnReturn)" in app
+assert "window.addEventListener('pageshow',reconcileOnReturn)" in app
+assert "document.addEventListener('visibilitychange'" in app

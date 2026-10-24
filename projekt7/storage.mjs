@@ -69,3 +69,14 @@ export function saveProject(storage,project,override=false,expectedPrimaryRaw=un
  }
  return clean;
 }
+
+// A resumed tab must not trust an old in-memory revision. A failed read or
+// an unknown startup revision is never evidence that overwriting is safe.
+export function inspectPrimaryRevision(storage,expectedRaw){
+ if(!storage)return 'unavailable';
+ let current;
+ try{current=storage.getItem(PRIMARY_KEY);}
+ catch{return 'unavailable';}
+ if(expectedRaw===undefined)return 'unverified';
+ return current===expectedRaw?'unchanged':'changed';
+}
