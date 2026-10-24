@@ -1,7 +1,7 @@
 import {starterProject,blankProject,validateProject,evaluate,MAX_OPTIONS,MAX_CRITERIA} from './core.mjs';
 import {inspectStorage,saveProject,PRIMARY_KEY} from './storage.mjs';
 import {createHistory} from './history.mjs';
-import {readArchive,addSnapshot,removeSnapshot,ARCHIVE_CAP} from './archive.mjs';
+import {readArchive,addSnapshot,removeSnapshot,ARCHIVE_CAP,ARCHIVE_KEY} from './archive.mjs';
 import {serializeBackup,parseBackupText,MAX_BACKUP_BYTES} from './backup.mjs';
 
 const byId=id=>document.getElementById(id);
@@ -17,6 +17,7 @@ let project=initial.project;
 let history=createHistory(project);
 let storageState=initial.state;
 let expectedPrimaryRaw=initial.primaryRaw;
+let expectedArchiveRaw=undefined;
 let idCounter=0;
 
 function browserStore(){try{return window.localStorage;}catch{return null;}}
@@ -264,6 +265,7 @@ byId('import-file').addEventListener('change',async event=>{
 });
 function renderArchive(){
  const list=byId('archive-list'),store=browserStore(),state=readArchive(store);
+ expectedArchiveRaw=state.raw;
  list.replaceChildren();
  const saveButton=byId('archive-save');
  saveButton.disabled=state.state==='unavailable'||state.state==='damaged'||state.items.length>=ARCHIVE_CAP;
@@ -292,15 +294,21 @@ function renderArchive(){
   },'Gespeicherten Stand öffnen: '+item.project.title);
   const remove=elementButton('Entfernen','button secondary',()=>{
    if(!confirm('Diesen gespeicherten Stand endgültig entfernen?'))return;
-   try{removeSnapshot(browserStore(),item.id);renderArchive();status.textContent='Gespeicherten Stand entfernt.';}
-   catch{status.textContent='Archiv konnte nicht geändert werden. Bestehende Daten bleiben erhalten.';}
+   try{removeSnapshot(browserStore(),item.id,expectedArchiveRaw);renderArchive();status.textContent='Gespeicherten Stand entfernt.';}
+   catch(err){
+    if(err?.code==='ARCHIVE_CONFLICT'){renderArchive();status.textContent='Archiv inzwischen geändert. Liste aktualisiert; bitte erneut versuchen.';}
+    else status.textContent='Archiv konnte nicht geändert werden. Bestehende Daten bleiben erhalten.';
+   }
   },'Gespeicherten Stand entfernen: '+item.project.title);
   actions.append(open,remove);row.append(info,actions);list.append(row);
  }
 }
 byId('archive-save').addEventListener('click',()=>{
- try{addSnapshot(browserStore(),project);renderArchive();status.textContent='Ein weiterer Stand wurde lokal gesichert.';}
- catch(err){status.textContent=err?.message||'Lokales Archiv konnte nicht gespeichert werden.';}
+ try{addSnapshot(browserStore(),project,Date.now(),expectedArchiveRaw);renderArchive();status.textContent='Ein weiterer Stand wurde lokal gesichert.';}
+ catch(err){
+  if(err?.code==='ARCHIVE_CONFLICT'){renderArchive();status.textContent='Archiv inzwischen geändert. Liste aktualisiert; bitte erneut versuchen.';}
+  else status.textContent=err?.message||'Lokales Archiv konnte nicht gespeichert werden.';
+ }
 });
 byId('reload-storage').addEventListener('click',()=>{
  if(!confirm('Den neuesten Browserstand laden? Nicht gespeicherte Änderungen in diesem Tab gehen verloren. Speichere sie bei Bedarf zuerst als JSON-Datei.'))return;
@@ -322,6 +330,7 @@ byId('reload-storage').addEventListener('click',()=>{
 });
 window.addEventListener('storage',event=>{
  if((event.key===PRIMARY_KEY||event.key===null)&&event.newValue!==expectedPrimaryRaw)markConflict();
+ if(event.key===ARCHIVE_KEY||event.key===null)renderArchive();
 });
 renderAll();
 renderArchive();

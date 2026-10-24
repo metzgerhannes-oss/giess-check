@@ -58,3 +58,31 @@ test('quota failures do not lose previously saved snapshots',()=>{
  assert.throws(()=>addSnapshot(fail,blankProject(),2),/QuotaExceededError/);
  assert.equal(store.getItem(ARCHIVE_KEY),before);
 });
+
+test('stale archive add cannot overwrite newer entries',()=>{
+ const s=memoryStore(),p=blankProject(),empty=readArchive(s).raw;
+ addSnapshot(s,p,1000,empty);
+ const stale=readArchive(s).raw;
+ addSnapshot(s,p,2000,stale);
+ const before=s.getItem(ARCHIVE_KEY);
+ assert.throws(()=>addSnapshot(s,p,3000,stale),e=>e.code==='ARCHIVE_CONFLICT');
+ assert.throws(()=>addSnapshot(s,p,3000,empty),e=>e.code==='ARCHIVE_CONFLICT');
+ assert.equal(s.getItem(ARCHIVE_KEY),before);
+ assert.equal(readArchive(s).items.length,2);
+});
+test('stale archive remove cannot erase newer snapshots',()=>{
+ const s=memoryStore(),p=blankProject(),a=addSnapshot(s,p,1000);
+ const stale=readArchive(s).raw;
+ addSnapshot(s,p,2000,stale);
+ const before=s.getItem(ARCHIVE_KEY);
+ assert.throws(()=>removeSnapshot(s,a.id,stale),e=>e.code==='ARCHIVE_CONFLICT');
+ assert.equal(s.getItem(ARCHIVE_KEY),before);
+});
+test('corrupt archive bytes remain intact after rejected stale write',()=>{
+ const s=memoryStore(),p=blankProject();
+ addSnapshot(s,p,1000);
+ const old=s.getItem(ARCHIVE_KEY);
+ s.setItem(ARCHIVE_KEY,'{corrupt');
+ assert.throws(()=>addSnapshot(s,p,2000,old),/beschädigt/);
+ assert.equal(s.getItem(ARCHIVE_KEY),'{corrupt');
+});

@@ -35,3 +35,6 @@ Statisches Hosting auf dem kostenlosen GitHub-Pages- oder Cloudflare-Pages-Tarif
 - PNG-Icons 180/192/512 px; das 512er Icon besitzt eine sichere zentrale Markierung für maskierbare Darstellung.
 - JSON-Import/-Export teilen dieselbe Validierung und prüfen das 100-KB-Limit anhand der UTF-8-Bytes.
 - Ausgewählte Kontrastpaare werden statisch gegen WCAG-AA-Mindestwerte geprüft; echte Safari-/iPhone-Hardwaretests und vollständige Screenreader-Abnahme bleiben offen.
+
+## Mehrfenster- und Update-Schutz (Sprint 7)
+Aktive Daten und Archiv verwenden Best-Effort-Versionserkennung für veraltete Tabs. Archivänderungen werden per Storage-Event in anderen Tabs aktualisiert. LocalStorage besitzt keine atomaren Transaktionen; ein extrem enges gleichzeitiges Schreib-Race bleibt technisch möglich. Der Chromium-Meilenstein prüft zwei echte Tabs, Archiv-Synchronisierung und einen simulierten Service-Worker-Wechsel mit Offline-Neustart. Echte iPhone-/Safari-Abnahme bleibt offen.
