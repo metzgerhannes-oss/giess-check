@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v19';
+const VERSION='klarpunkt-shell-v20';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Cache only this app's immutable shell paths, never arbitrary data or URL variants.
 const STATIC_PATHS=new Set(FILES.map(path=>new URL(path,self.registration.scope).pathname));
@@ -89,7 +89,11 @@ self.addEventListener('fetch',event=>{
   const response=await fetch(request);
   // Apply precache MIME, origin and redirect checks to runtime repairs too.
   if(!trustedShellAsset(response,shellPath))return Response.error();
-  cache.put(request,response.clone()).catch(()=>{});
+  // A fetch event may end as soon as its response settles. Await the
+  // best-effort cache write so a repaired asset is actually durable before
+  // delivery; a quota/permission failure must still allow online use.
+  try{await cache.put(request,response.clone());}
+  catch{ /* Online delivery remains possible; offline navigation still checks the full shell. */ }
   return response;
  }));
 });
