@@ -208,7 +208,7 @@ try{
  workerOverride=sourceWorker.replace("'klarpunkt-shell-v9'","'klarpunkt-shell-v9-smoke'");
  assert.notEqual(workerOverride,sourceWorker,'Worker version marker missing');
  await evaluate("navigator.serviceWorker.ready.then(reg=>reg.update().then(()=>true))");
- await until("caches.keys().then(keys=>keys.includes('klarpunkt-shell-v8-smoke')&&!keys.includes('klarpunkt-shell-v8'))");
+ await until("caches.keys().then(keys=>keys.includes('klarpunkt-shell-v9-smoke')&&!keys.includes('klarpunkt-shell-v9'))");
  await send('Network.emulateNetworkConditions',{offline:true,latency:0,downloadThroughput:0,uploadThroughput:0});
  await navigate(url);
  assert.equal(await evaluate("document.querySelector('#project-title').value"),'Ersttab neu','Offline update lost local state');
