@@ -21,7 +21,7 @@ export function inspectStorage(storage){
   return {state:'damaged',project:starterProject(),primaryRaw:primary};
  }catch{return {state:'unavailable',project:starterProject(),primaryRaw:undefined};}
 }
-export function saveProject(storage,project,override=false,expectedPrimaryRaw=undefined){
+export function saveProject(storage,project,override=false,expectedPrimaryRaw=undefined,onBackupFailure=null){
  const clean=validateProject(project);
  const current=storage.getItem(PRIMARY_KEY);
  // Best-effort optimistic precondition: localStorage has no atomic compare-and-swap.
@@ -30,16 +30,25 @@ export function saveProject(storage,project,override=false,expectedPrimaryRaw=un
   error.code='STORAGE_CONFLICT';
   throw error;
  }
+ const previousBackup=storage.getItem(BACKUP_KEY);
+ let last=null;
  if(current!==null){
-  try{
-   const last=decode(current);
-   storage.setItem(BACKUP_KEY,JSON.stringify(last));
-  }catch(error){
+  try{last=decode(current);}
+  catch{
    if(!override)throw new Error('Lokale Sicherung ist beschädigt.');
   }
- }else if(storage.getItem(BACKUP_KEY)===null){
-  storage.setItem(BACKUP_KEY,JSON.stringify(clean));
  }
- storage.setItem(PRIMARY_KEY,JSON.stringify(clean));
+ const nextRaw=JSON.stringify(clean);
+ // Save the active version first: a failed primary write never changes backup.
+ // Separate localStorage keys are not an atomic transaction.
+ storage.setItem(PRIMARY_KEY,nextRaw);
+ const backupRaw=last?JSON.stringify(last):(current===null&&previousBackup===null?nextRaw:null);
+ if(backupRaw!==null){
+  try{storage.setItem(BACKUP_KEY,backupRaw);}
+  catch(error){
+   // Active data is saved; the previous backup is unchanged.
+   if(typeof onBackupFailure==='function')onBackupFailure(error);
+  }
+ }
  return clean;
 }

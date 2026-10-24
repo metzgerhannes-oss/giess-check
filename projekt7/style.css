@@ -30,3 +30,13 @@ input[type=range]{min-height:44px}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 
 .sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+/* Accessibility: respect stronger contrast preferences without changing defaults. */
+@media(prefers-contrast:more){
+ :root{--muted:#34495e;--line:#8999a8}
+ .button.secondary,.title-input,.entry-input,.criterion-name,.criterion-card{border-color:#63798b}
+ .bar-track{border:1px solid #4c6477}
+ .bar-fill{background:#286481}
+ .rank-item:first-of-type .bar-fill{background:#145d48}
+ :focus-visible{outline:3px solid #075a91;outline-offset:3px}
+}

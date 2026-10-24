@@ -94,6 +94,25 @@ try{
  await send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5});
  await navigate(url);
  assert.equal(await evaluate("document.querySelectorAll('#results .rank-item').length>=2"),true);
+ // Browser quota fault: a failed secondary backup must not lose active data.
+ const quotaFault=await evaluate(`(()=>{
+  const original=Storage.prototype.setItem;
+  Storage.prototype.setItem=function(key,value){
+   if(key==='klarpunkt.project.backup.v1')throw new DOMException('Quota','QuotaExceededError');
+   return original.call(this,key,value);
+  };
+  try{
+   const input=document.querySelector('#project-title');
+   input.value='Quota fault';
+   input.dispatchEvent(new Event('input',{bubbles:true}));
+   return {saved:JSON.parse(localStorage.getItem('klarpunkt.project.v1')).title,
+    warned:document.querySelector('#save-status').textContent.includes('zusätzliche lokale Sicherung')};
+  }finally{Storage.prototype.setItem=original;}
+ })()`);
+ assert.deepEqual(quotaFault,{saved:'Quota fault',warned:true},'Backup quota error must not lose primary data');
+ await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-contrast',value:'more'}]});
+ assert.equal(await evaluate("getComputedStyle(document.documentElement).getPropertyValue('--muted').trim()"),'#34495e','High-contrast preference ignored');
+ await send('Emulation.setEmulatedMedia',{features:[]});
  assert.equal(await evaluate("document.querySelector('link[rel=apple-touch-icon]').getAttribute('href')"),'./apple-touch-icon.png');
  assert.equal(await evaluate("document.querySelector('.install-help summary')!==null"),true);
  assert.equal(await evaluate("!!document.querySelector('#archive-export')&&!!document.querySelector('#archive-import')"),true);
@@ -216,10 +235,10 @@ try{
  // Simulate a deployment and verify the new shell survives a cold offline reload.
  await send('Network.emulateNetworkConditions',{offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1});
  const sourceWorker=await readFile(join(root,'sw.js'),'utf8');
- workerOverride=sourceWorker.replace("'klarpunkt-shell-v9'","'klarpunkt-shell-v9-smoke'");
+ workerOverride=sourceWorker.replace("'klarpunkt-shell-v10'","'klarpunkt-shell-v10-smoke'");
  assert.notEqual(workerOverride,sourceWorker,'Worker version marker missing');
  await evaluate("navigator.serviceWorker.ready.then(reg=>reg.update().then(()=>true))");
- await until("caches.keys().then(keys=>keys.includes('klarpunkt-shell-v9-smoke')&&!keys.includes('klarpunkt-shell-v9'))");
+ await until("caches.keys().then(keys=>keys.includes('klarpunkt-shell-v10-smoke')&&!keys.includes('klarpunkt-shell-v10'))");
  await send('Network.emulateNetworkConditions',{offline:true,latency:0,downloadThroughput:0,uploadThroughput:0});
  await navigate(url);
  assert.equal(await evaluate("document.querySelector('#project-title').value"),'Ersttab neu','Offline update lost local state');
