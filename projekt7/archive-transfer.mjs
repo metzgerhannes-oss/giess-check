@@ -1,5 +1,5 @@
 import {validateProject} from './core.mjs';
-import {ARCHIVE_CAP,ARCHIVE_KEY,MAX_ARCHIVE_BYTES,readArchive} from './archive.mjs';
+import {ARCHIVE_CAP,ARCHIVE_KEY,MAX_ARCHIVE_BYTES,readArchive,assertArchiveVersion} from './archive.mjs';
 
 // Independent portable archive. Import replaces only the archive key, never
 // the active project or its backup. No network calls or dependencies.
@@ -45,7 +45,8 @@ export function importArchiveBackup(storage,parsed,expectedRaw=undefined){
  if(state.state==='damaged'||state.state==='unavailable'){
   throw new Error('Vorhandenes Archiv beschädigt oder nicht verfügbar; nichts wurde überschrieben.');
  }
- if(expectedRaw!==undefined&&state.raw!==expectedRaw){
+ const baseline=expectedRaw===undefined?state.raw:expectedRaw;
+ if(state.raw!==baseline){
   const error=new Error('Archiv wurde in einem anderen Tab geändert.');
   error.code='ARCHIVE_CONFLICT';
   throw error;
@@ -53,6 +54,9 @@ export function importArchiveBackup(storage,parsed,expectedRaw=undefined){
  if(!parsed||parsed.version!==1)throw new Error('Ungültiges Archivformat.');
  const payload=JSON.stringify({version:1,items:normalizeItems(parsed.items)});
  checkSize(payload);
+ // Validation may be expensive; detect an intervening tab write immediately
+ // before replacement. localStorage still has no atomic compare-and-swap.
+ assertArchiveVersion(storage,baseline);
  // One atomic localStorage.setItem; quota errors preserve the previous archive.
  storage.setItem(ARCHIVE_KEY,payload);
  return parsed.items.length;

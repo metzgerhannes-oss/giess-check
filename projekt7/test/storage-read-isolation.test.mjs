@@ -28,7 +28,7 @@ test('valid primary can be saved without reading inaccessible backup',()=>{
  s.blockRead(BACKUP_KEY);
  const before=s.reads.length,expected=s.getItem(PRIMARY_KEY);
  saveProject(s,named('C'),false,expected);
- assert.deepEqual(s.reads.slice(before+1),[PRIMARY_KEY]);
+ assert.deepEqual(s.reads.slice(before+1),[PRIMARY_KEY,PRIMARY_KEY]);
  assert.equal(JSON.parse(s.getItem(PRIMARY_KEY)).title,'C');
  s.unblockRead(BACKUP_KEY);
  assert.equal(JSON.parse(s.getItem(BACKUP_KEY)).title,'B');
