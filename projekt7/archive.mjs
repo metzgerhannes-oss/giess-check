@@ -6,8 +6,10 @@ export const ARCHIVE_CAP=12;
 
 export function readArchive(storage){
  if(!storage)return {state:'unavailable',items:[],raw:undefined};
+ let raw;
+ try{raw=storage.getItem(ARCHIVE_KEY);}
+ catch{return {state:'unavailable',items:[],raw:undefined};}
  try{
-  const raw=storage.getItem(ARCHIVE_KEY);
   if(raw===null)return {state:'new',items:[],raw};
   if(raw.length>350000)throw new Error('Oversized archive');
   const parsed=JSON.parse(raw);

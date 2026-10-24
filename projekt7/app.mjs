@@ -45,11 +45,14 @@ function save(record=true){
   return false;
  }
  try{
-  const clean=saveProject(window.localStorage,project,storageState==='recovered',expectedPrimaryRaw);
+  let backupWarning=false;
+  const clean=saveProject(window.localStorage,project,storageState==='recovered',expectedPrimaryRaw,()=>{backupWarning=true;});
   expectedPrimaryRaw=JSON.stringify(clean);
   storageState='ok';
   unsavedGuard.setDirty(false);
-  status.textContent='Automatisch gespeichert · nur auf diesem Gerät';
+  status.textContent=backupWarning
+   ?'Aktueller Stand gespeichert, aber zusätzliche lokale Sicherung konnte nicht aktualisiert werden. Bitte eine JSON-Datei sichern.'
+   :'Automatisch gespeichert · nur auf diesem Gerät';
   return true;
  }catch(err){
   if(err?.code==='STORAGE_CONFLICT'){markConflict();return false;}

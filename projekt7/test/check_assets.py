@@ -81,7 +81,7 @@ for fg,bg in [('#1c2b3a','#ffffff'),('#536272','#ffffff'),('#a7e8d9','#1e4967'),
 assert 'id="reload-storage"' in html
 assert 'STORAGE_CONFLICT' in (root / "storage.mjs").read_text(encoding="utf-8")
 assert "event.key===PRIMARY_KEY" in app
-assert "const VERSION='klarpunkt-shell-v9'" in sw
+assert "const VERSION='klarpunkt-shell-v10'" in sw
 assert "cache.match('./index.html')" in sw, "Version-consistent navigation required"
 assert "caches.open(VERSION).then(cache=>cache.match(request)" in sw, "Do not mix caches across apps"
 
@@ -97,3 +97,7 @@ assert "resultAnnouncementTimer" in app
 assert (root / "test/live-smoke.mjs").is_file()
 assert (root / "test/live-verify.test.mjs").is_file()
 assert "github.event_name == 'push'" in (root.parent / ".github/workflows/projekt7-checks.yml").read_text(encoding="utf-8")
+
+assert "prefers-contrast:more" in (root / "style.css").read_text(encoding="utf-8")
+assert "onBackupFailure" in (root / "storage.mjs").read_text(encoding="utf-8")
+assert "backupWarning" in app
