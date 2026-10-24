@@ -45,6 +45,7 @@ export function saveProject(storage,project,override=false,expectedPrimaryRaw=un
  }
  const nextRaw=JSON.stringify(clean);
  let backupRaw=null;
+ let seedBackup=false;
  if(last){
   // A valid primary is sufficient to produce a recovery copy. Never require
   // permission to read an optional backup before committing valid active data.
@@ -53,14 +54,27 @@ export function saveProject(storage,project,override=false,expectedPrimaryRaw=un
   // No valid primary: read the existing backup before any write. If access is
   // denied, do not hide a potentially recoverable copy behind a new primary.
   const previousBackup=storage.getItem(BACKUP_KEY);
-  if(current===null&&previousBackup===null)backupRaw=nextRaw;
+  if(current===null&&previousBackup===null){backupRaw=nextRaw;seedBackup=true;}
+ }
+ // A second read narrows the inter-tab race window. A revision observed during
+ // backup preparation must never be silently replaced by this tab.
+ if(storage.getItem(PRIMARY_KEY)!==current){
+  const error=new Error('Der Browserstand wurde während des Speicherns geändert.');
+  error.code='STORAGE_CONFLICT';
+  throw error;
  }
  // Save the active version first: a failed primary write never changes backup.
  // Separate localStorage keys are not an atomic transaction.
  storage.setItem(PRIMARY_KEY,nextRaw);
  if(backupRaw!==null){
-  try{storage.setItem(BACKUP_KEY,backupRaw);}
-  catch(error){
+  try{
+   // When seeding an empty store, preserve a recovery copy another tab may
+   // have written since the initial read. Primary is already committed.
+   if(seedBackup&&storage.getItem(BACKUP_KEY)!==null){
+    throw new Error('Zusätzliche Sicherung wurde zwischenzeitlich geändert.');
+   }
+   storage.setItem(BACKUP_KEY,backupRaw);
+  }catch(error){
    // Active data is saved; the previous backup is unchanged.
    // A warning listener must never turn an already committed primary write
    // into an apparent failure (which could trigger a destructive retry).

@@ -27,7 +27,7 @@ export function readArchive(storage){
  }catch{return {state:'damaged',items:[],raw:undefined};}
 }
 
-function assertArchiveVersion(storage,expectedRaw){
+export function assertArchiveVersion(storage,expectedRaw){
  // Best-effort optimistic check; localStorage does not offer atomic compare-and-swap.
  if(expectedRaw!==undefined&&storage.getItem(ARCHIVE_KEY)!==expectedRaw){
   const error=new Error('Archiv wurde in einem anderen Tab geändert.');
@@ -52,13 +52,13 @@ export function addSnapshot(storage,project,now=Date.now(),expectedRaw=undefined
  let n=0,id;
  do{id='s'+timestamp.toString(36)+'_'+(++n).toString(36)}while(state.items.some(entry=>entry.id===id));
  const item={id,createdAt:timestamp,project:copy};
- writeArchive(storage,[item,...state.items],expectedRaw);
+ writeArchive(storage,[item,...state.items],expectedRaw===undefined?state.raw:expectedRaw);
  return item;
 }
 export function removeSnapshot(storage,id,expectedRaw=undefined){
  const state=readArchive(storage);
  if(state.state==='damaged'||state.state==='unavailable')throw new Error('Archiv nicht verfügbar oder beschädigt.');
  if(!state.items.some(item=>item.id===id))throw new Error('Eintrag nicht gefunden.');
- writeArchive(storage,state.items.filter(item=>item.id!==id),expectedRaw);
+ writeArchive(storage,state.items.filter(item=>item.id!==id),expectedRaw===undefined?state.raw:expectedRaw);
  return true;
 }
