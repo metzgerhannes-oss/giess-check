@@ -117,10 +117,11 @@ try{
   const vw=document.documentElement.clientWidth;
   return {viewport:vw,scroll:document.documentElement.scrollWidth,
    offenders:[...document.querySelectorAll('body *')].filter(el=>{
-    const rect=el.getBoundingClientRect();return rect.right>vw+1||rect.left< -1;
-   }).slice(0,16).map(el=>({tag:el.tagName,cls:el.className,
-    width:Math.round(el.getBoundingClientRect().width),
-    right:Math.round(el.getBoundingClientRect().right)}))};
+    const rect=el.getBoundingClientRect();return rect.right>vw+1||rect.left< -1||el.scrollWidth>el.clientWidth+5;
+   }).slice(0,18).map(el=>({tag:el.tagName,cls:String(el.className).slice(0,50),
+    width:Math.round(el.getBoundingClientRect().width),right:Math.round(el.getBoundingClientRect().right),
+    scroll:el.scrollWidth,client:el.clientWidth,wrap:getComputedStyle(el).overflowWrap,
+    white:getComputedStyle(el).whiteSpace}))};
  })()`);
  assert.ok(zoomOverflow.scroll<=zoomOverflow.viewport+1,'Horizontal overflow at 320 CSS px reflow: '+JSON.stringify(zoomOverflow));
  assert.equal(await evaluate("getComputedStyle(document.querySelector('.archive-tools')).gridTemplateColumns!=='none'"),true,'Archive controls do not reflow at 320 CSS px');
