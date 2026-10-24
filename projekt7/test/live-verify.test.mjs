@@ -16,6 +16,8 @@ test('live verifier rejects stale and redirected assets',async()=>{
   const fake=async url=>{const u=new URL(url),name=u.pathname.split('/').pop();requests.push(url);return {ok:true,url:u.toString(),arrayBuffer:async()=>data.get(name)};};
   assert.equal((await verifyPublishedAssets('https://example.github.io/repo/projekt7/',root,fake)).length,LIVE_ASSETS.length);
   assert.ok(requests.every(u=>new URL(u).searchParams.has('_verify')));
+  const missing=async url=>({...await fake(url),ok:false,status:404});
+  await assert.rejects(()=>verifyPublishedAssets('https://example.github.io/repo/projekt7/',root,missing),/HTTP 404/);
   const stale=async url=>({...await fake(url),arrayBuffer:async()=>Buffer.from('stale')});
   await assert.rejects(()=>verifyPublishedAssets('https://example.github.io/repo/projekt7/',root,stale),/differs/);
   const redirect=async url=>({...await fake(url),url:'https://other.github.io/repo/'});

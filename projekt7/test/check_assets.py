@@ -96,4 +96,4 @@ assert 'id="result-announcement"' in html and 'aria-live="off"' in html
 assert "resultAnnouncementTimer" in app
 assert (root / "test/live-smoke.mjs").is_file()
 assert (root / "test/live-verify.test.mjs").is_file()
-assert "workflow_run:" in (root.parent / ".github/workflows/projekt7-checks.yml").read_text(encoding="utf-8")
+assert "github.event_name == 'push'" in (root.parent / ".github/workflows/projekt7-checks.yml").read_text(encoding="utf-8")

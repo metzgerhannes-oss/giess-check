@@ -47,3 +47,5 @@ Wenn der Browser die aktuelle Bearbeitung nicht speichern kann (z. B. Quota oder
 
 ## Sprint 10: Tastaturbedienung und HTTPS-Deployment-Verifikation
 Nach dynamischen Ergänzungen und Löschungen bleibt der Tastaturfokus auf einem sinnvollen Eingabefeld. Ein separates verzögertes Statusfeld informiert Screenreader knapp, statt die gesamte Ergebnisliste anzusagen. Der Chromium-Meilenstein prüft diese Fokuspfade. Nach einem erfolgreichen GitHub-Pages-Workflow vergleicht ein eigener lesender GitHub-Actions-Job alle relevanten veröffentlichten HTTPS-Dateien bytegenau mit dem ausgecheckten Commit und wiederholt bei CDN-Verzögerung. Ein solcher Live-Smoke ist keine echte iPhone-/Safari-Hardwareabnahme.
+
+**Deployment-Trigger-Korrektur:** Die automatisch erzeugte GitHub-Pages-`dynamic`-Workflow-Ausführung löst keinen verlässlichen `workflow_run` aus. Deshalb startet die HTTPS-Verifikation nach dem schnellen Pflicht-Gate auf jedem `main`-Push und wartet bei Bedarf auf das parallel laufende Pages-Deployment. Ein grünes Pages-Deployment allein zählt nicht als bestandener HTTPS-Smoke.
