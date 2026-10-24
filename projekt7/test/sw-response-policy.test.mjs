@@ -51,7 +51,14 @@ for(const [label,headers] of [
  ['wildcard vary',{'vary':'Accept-Encoding, *'}],
  ['partial content',{'content-range':'bytes 0-100/200'}],
  ['download disposition',{'content-disposition':'attachment; filename="app.mjs"'}],
- ['empty asset',{'content-length':'0'}]
+ ['empty asset',{'content-length':'0'}],
+ ['private response',{'cache-control':'private, max-age=3600'}],
+ ['revalidation required',{'cache-control':'no-cache'}],
+ ['private field list',{'cache-control':'private="Set-Cookie"'}],
+ ['cookie variant',{'vary':'Accept-Encoding, Cookie'}],
+ ['authorization variant',{'vary':'Authorization'}],
+ ['proxy authorization variant',{'vary':'Proxy-Authorization'}],
+ ['origin variant',{'vary':'Origin'}]
 ]){
  test('precache trust gate rejects '+label,()=>{
   const h=harness();
@@ -80,4 +87,42 @@ test('ordinary public asset request still repairs and persists cache',async()=>{
  assert.equal(h.fetches,1);
  assert.equal(h.writes,1);
  assert.equal(h.entries.size,1);
+});
+
+test('navigation with query parameters never substitutes the public cached shell',()=>{
+ const h=harness();
+ assert.equal(h.dispatch({...h.request('./?session=opaque'),mode:'navigate'}),undefined);
+ assert.equal(h.dispatch({...h.request('./index.html?state=1'),mode:'navigate'}),undefined);
+ assert.equal(h.fetches,0);
+ assert.equal(h.writes,0);
+});
+test('requests explicitly requiring no storage or conditional validation bypass shell cache',()=>{
+ const h=harness();
+ for(const headers of [['cookie'],['if-none-match'],['if-modified-since'],['if-match'],['if-unmodified-since'],['if-range']]){
+  assert.equal(h.dispatch(h.request('./app.mjs',headers)),undefined,headers.join(','));
+ }
+ assert.equal(h.dispatch({...h.request('./app.mjs'),cache:'no-store'}),undefined);
+ assert.equal(h.fetches,0);
+ assert.equal(h.writes,0);
+});
+test('cache entries marked private or varying by user are never reused',async()=>{
+ const h=harness();
+ const url=new URL('./app.mjs',scope).href;
+ for(const headers of [{'cache-control':'private'},{vary:'Cookie'},{vary:'Authorization'}]){
+  const poisoned=h.response('./app.mjs',{'content-type':'text/javascript',...headers});
+  h.entries.set(url,poisoned);
+  const result=await h.dispatch(h.request('./app.mjs'));
+  assert.equal(result.ok,true);
+  assert.notEqual(result,poisoned);
+  assert.notEqual(h.entries.get(url),poisoned);
+ }
+ assert.equal(h.fetches,3);
+ assert.equal(h.writes,3);
+});
+test('safe cache variation and public cache-control remain valid',()=>{
+ const h=harness();
+ assert.equal(h.trusted(h.response('./app.mjs',{
+  'content-type':'text/javascript','cache-control':'public, max-age=3600',
+  'vary':'Accept-Encoding, Accept-Language'
+ }), './app.mjs'),true);
 });

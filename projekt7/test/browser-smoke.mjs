@@ -59,7 +59,10 @@ try{
    if(file===root||!file.startsWith(root+sep)){res.writeHead(403).end();return;}
    if(!(await stat(file)).isFile()){res.writeHead(404).end();return;}
    const ext=file.slice(file.lastIndexOf('.'));
-   res.writeHead(200,{'Content-Type':mime[ext]||'application/octet-stream','Cache-Control':'no-store'});
+   // The worker script must be revalidated; public shell assets must remain
+   // cacheable, matching the deployed static-hosting response contract.
+   res.writeHead(200,{'Content-Type':mime[ext]||'application/octet-stream',
+    'Cache-Control':relative==='sw.js'?'no-store':'public, max-age=0, must-revalidate'});
    res.end(relative==='sw.js'&&workerOverride!==null?workerOverride:await readFile(file));
   }catch{res.writeHead(404).end();}
  });
@@ -337,10 +340,23 @@ try{
   return {removed,missing:!(await cache.match('./core.mjs'))};
  })()`);
  assert.deepEqual(evicted,{removed:true,missing:true},'CacheStorage eviction did not occur');
+ // Prevent Chromium's independent HTTP disk cache from silently repairing the
+ // shell while the test server is returning 503. CacheStorage stays enabled.
+ await send('Network.setCacheDisabled',{cacheDisabled:true});
+ await send('Network.emulateNetworkConditions',{offline:true,latency:0,downloadThroughput:0,uploadThroughput:0});
  denyAssets=true;
- const denied=await send('Page.navigate',{url:url+'?eviction-probe=1'});
+ // Chromium can retain the previous document after a failed navigation.
+ // A retained marker is safe; a newly loaded app with incomplete cache is not.
+ await evaluate('window.__failClosedMarker=true');
+ const denied=await send('Page.navigate',{url:origin+'/projekt7/'});
  await sleep(400);
- const failedClosed=Boolean(denied.errorText)||await evaluate("!document.querySelector('#results .rank-item')");
+ const failedClosed=Boolean(denied.errorText)||await evaluate("window.__failClosedMarker===true || !document.querySelector('#results .rank-item')");
+ if(!failedClosed)console.error('Eviction diagnostics',JSON.stringify(await evaluate(`(async()=>({
+  href:location.href,marker:window.__failClosedMarker===true,
+  controller:navigator.serviceWorker?.controller?.scriptURL,
+  caches:await caches.keys(),
+  missingCore:!(await (await caches.open(${JSON.stringify(smokeVersion)})).match('./core.mjs'))
+ }))()`)));
  assert.equal(failedClosed,true,'Partial offline shell must fail closed during network outage');
  stage='online full-shell recovery after cache eviction';
  denyAssets=false;
@@ -366,11 +382,14 @@ try{
   return (await cache.match('./index.html')).headers.get('content-type');
  })()`);
  assert.equal(poisonedHTML,'text/javascript','Poisoned cache fixture missing');
+ await send('Network.emulateNetworkConditions',{offline:true,latency:0,downloadThroughput:0,uploadThroughput:0});
  denyAssets=true;
- const blocked=await send('Page.navigate',{url:url+'?poison-probe=1'});
+ await evaluate('window.__failClosedMarker=true');
+ const blocked=await send('Page.navigate',{url:origin+'/projekt7/'});
  await sleep(400);
- assert.equal(Boolean(blocked.errorText)||await evaluate("!document.querySelector('#results .rank-item')"),true,'Poisoned HTML must fail closed');
+ assert.equal(Boolean(blocked.errorText)||await evaluate("window.__failClosedMarker===true || !document.querySelector('#results .rank-item')"),true,'Poisoned HTML must fail closed');
  denyAssets=false;
+ await send('Network.emulateNetworkConditions',{offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1});
  await navigate(url);
  assert.equal(await evaluate("document.querySelector('#project-title').value"),'Ersttab neu','Poisoned HTML recovery lost local state');
  assert.equal(await evaluate("document.querySelectorAll('#results .rank-item').length>=2"),true,'Poisoned HTML recovery missing modules');
