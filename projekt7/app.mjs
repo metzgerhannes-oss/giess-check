@@ -22,6 +22,7 @@ let storageState=initial.state;
 let expectedPrimaryRaw=initial.primaryRaw;
 let expectedArchiveRaw=undefined;
 let idCounter=0;
+let resultAnnouncementTimer;
 
 function browserStore(){try{return window.localStorage;}catch{return null;}}
 function load(){
@@ -98,6 +99,8 @@ function renderOptions(){
    project.options=project.options.filter(o=>o.id!==option.id);
    for(const criterion of project.criteria)delete criterion.ratings[option.id];
    changed();
+   const inputs=byId('options').querySelectorAll('.option-entry input');
+   inputs[Math.min(index,inputs.length-1)]?.focus();
   },'Möglichkeit '+(index+1)+' entfernen');
   remove.disabled=project.options.length<=2;
   row.append(remove);root.append(row);
@@ -128,6 +131,8 @@ function renderCriteria(){
   const remove=elementButton('×','icon-button',()=>{
    if(project.criteria.length<=1)return;
    project.criteria=project.criteria.filter(c=>c.id!==criterion.id);changed();
+   const inputs=byId('criteria').querySelectorAll('.criterion-name');
+   inputs[Math.min(criterionIndex,inputs.length-1)]?.focus();
   },'Kriterium '+(criterionIndex+1)+' entfernen');
   remove.disabled=project.criteria.length<=1;heading.append(input,remove);
   card.append(heading);
@@ -198,6 +203,12 @@ function renderResults(){
   :'Das Ergebnis wird aus deinen Bewertungen und Gewichtungen berechnet.';
  box.append(make('p','',explanation));
  root.append(box);
+ clearTimeout(resultAnnouncementTimer);
+ resultAnnouncementTimer=setTimeout(()=>{
+  byId('result-announcement').textContent=margin<.05
+   ?'Aktuelles Ergebnis: nahezu Gleichstand.'
+   :'Aktuell vorne: '+best.name+', '+best.score.toLocaleString('de-DE',{maximumFractionDigits:1})+' von 10 Punkten.';
+ },450);
 }
 function renderAll(){
  byId('project-title').value=project.title;
@@ -227,12 +238,14 @@ byId('add-option').addEventListener('click',()=>{
  project.options.push({id,name:'Neue Möglichkeit'});
  for(const c of project.criteria)c.ratings[id]=5;
  changed();
+ byId('options').querySelector('.option-entry:last-child input')?.focus();
 });
 byId('add-criterion').addEventListener('click',()=>{
  if(project.criteria.length>=MAX_CRITERIA)return;
  const ratings=Object.fromEntries(project.options.map(o=>[o.id,5]));
  project.criteria.push({id:uniqueId('c',project.criteria),name:'Neues Kriterium',weight:3,uncertainty:1,ratings});
  changed();
+ byId('criteria').querySelector('.criterion-card:last-child .criterion-name')?.focus();
 });
 byId('new-project').addEventListener('click',()=>{
  if(!confirm('Aktuelle Entscheidung ersetzen? Lade bei Bedarf vorher eine Sicherung herunter.'))return;
@@ -297,7 +310,7 @@ function renderArchive(){
   },'Gespeicherten Stand öffnen: '+item.project.title);
   const remove=elementButton('Entfernen','button secondary',()=>{
    if(!confirm('Diesen gespeicherten Stand endgültig entfernen?'))return;
-   try{removeSnapshot(browserStore(),item.id,expectedArchiveRaw);renderArchive();status.textContent='Gespeicherten Stand entfernt.';}
+   try{removeSnapshot(browserStore(),item.id,expectedArchiveRaw);renderArchive();byId('archive-save').focus();status.textContent='Gespeicherten Stand entfernt.';}
    catch(err){
     if(err?.code==='ARCHIVE_CONFLICT'){renderArchive();status.textContent='Archiv inzwischen geändert. Liste aktualisiert; bitte erneut versuchen.';}
     else status.textContent='Archiv konnte nicht geändert werden. Bestehende Daten bleiben erhalten.';

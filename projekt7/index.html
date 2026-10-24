@@ -93,7 +93,8 @@
           <section class="panel result-panel">
             <div class="result-topline"><span class="overline">DEIN VERGLEICH</span><span class="live-dot">LIVE</span></div>
             <h2>Was spricht wofür?</h2>
-            <div id="results" aria-live="polite" aria-atomic="true"></div>
+            <p id="result-announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
+            <div id="results" aria-live="off"></div>
             <div class="disclaimer">Hinweis: Die Ergebnisse sind Rechenhilfen, keine objektive Wahrheit. Die Robustheitsanzeige simuliert angenommene Schwankungen – sie ist keine Vorhersage.</div>
             <button id="print" class="button print-button" type="button">Ergebnis drucken / als PDF</button>
           </section>

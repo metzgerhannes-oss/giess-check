@@ -10,10 +10,14 @@ on:
       - "projekt7/**"
       - ".github/workflows/projekt7-checks.yml"
   workflow_dispatch:
+  workflow_run:
+    workflows: ["pages build and deployment"]
+    types: [completed]
 permissions:
   contents: read
 jobs:
   test:
+    if: github.event_name != 'workflow_run'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -34,6 +38,8 @@ jobs:
           node --check projekt7/backup.mjs
           node --check projekt7/app.mjs
           node --check projekt7/sw.js
+          node --check projekt7/test/live-verify.mjs
+          node --check projekt7/test/live-smoke.mjs
       - name: HTML, PWA asset references
         run: python3 projekt7/test/check_assets.py
 
@@ -49,3 +55,19 @@ jobs:
           node-version: "22"
       - name: Headless Chromium mobile and offline smoke
         run: node projekt7/test/browser-smoke.mjs
+
+  deployed_https:
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify deployed HTTPS assets against exact commit
+        env:
+          PAGES_URL: https://metzgerhannes-oss.github.io/giess-check/projekt7/
+        run: node projekt7/test/live-smoke.mjs
