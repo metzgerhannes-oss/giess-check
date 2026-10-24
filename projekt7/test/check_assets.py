@@ -81,7 +81,7 @@ for fg,bg in [('#1c2b3a','#ffffff'),('#536272','#ffffff'),('#a7e8d9','#1e4967'),
 assert 'id="reload-storage"' in html
 assert 'STORAGE_CONFLICT' in (root / "storage.mjs").read_text(encoding="utf-8")
 assert "event.key===PRIMARY_KEY" in app
-assert "const VERSION='klarpunkt-shell-v11'" in sw
+assert "const VERSION='klarpunkt-shell-v12'" in sw
 assert "cache.match('./index.html')" in sw, "Version-consistent navigation required"
 assert "caches.open(VERSION).then(cache=>cache.match(request)" in sw, "Do not mix caches across apps"
 
@@ -112,3 +112,9 @@ assert '.insights{order:initial}' in css
 assert '.print-project-title{display:block' in css
 assert '@media(prefers-reduced-motion:reduce)' in css
 assert '@media(forced-colors:active)' in css
+
+# Sprint 13: keep reflow guards, accessibility focus and destructive-import regression coverage.
+assert '@media(max-width:400px)' in css
+assert '#workspace:focus-visible' in css
+assert (root / 'test/release-hardening.test.mjs').is_file()
+assert 'Primary write failure must preserve persisted data' in (root / 'test/browser-smoke.mjs').read_text(encoding='utf-8')

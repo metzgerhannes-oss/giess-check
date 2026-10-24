@@ -103,6 +103,23 @@ try{
  assert.equal(await evaluate("document.activeElement.id"),'workspace','Skip target cannot receive keyboard focus');
  await evaluate("window.dispatchEvent(new Event('beforeprint'))");
  assert.equal(await evaluate("document.querySelector('#print-project-title').textContent.includes(document.querySelector('#project-title').value)"),true,'Print report missing the current title');
+ // Desktop 400% zoom of a 1280px window yields roughly 320 CSS px.
+ // Exercise desktop media queries with maximal-length user-controlled labels.
+ await send('Emulation.setDeviceMetricsOverride',{width:320,height:800,deviceScaleFactor:1,mobile:false});
+ await evaluate(`(()=>{
+  const o=document.querySelector('#options .option-entry input');
+  o.value='W'.repeat(80);o.dispatchEvent(new Event('input',{bubbles:true}));
+  const c=document.querySelector('#criteria .criterion-name');
+  c.value='K'.repeat(80);c.dispatchEvent(new Event('input',{bubbles:true}));
+ })()`);
+ await sleep(120);
+ assert.equal(await evaluate("document.documentElement.scrollWidth<=document.documentElement.clientWidth+1"),true,'Horizontal overflow at desktop 400% zoom with long labels');
+ assert.equal(await evaluate("getComputedStyle(document.querySelector('.archive-tools')).gridTemplateColumns!=='none'"),true,'Archive controls do not reflow at 400% zoom');
+ assert.equal(await evaluate("document.querySelector('#archive-save').getBoundingClientRect().height>=40"),true,'Archive control too small at 400% zoom');
+ await evaluate("window.confirm=()=>true;document.querySelector('#load-example').click()");
+ await until("document.querySelector('#options .option-entry input').value!=='W'.repeat(80)");
+ await send('Emulation.setDeviceMetricsOverride',{width:320,height:720,deviceScaleFactor:2,mobile:true});
+ assert.equal(await evaluate("document.documentElement.scrollWidth<=document.documentElement.clientWidth+1"),true,'Horizontal overflow returning to mobile viewport');
  await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:3,mobile:true});
  assert.equal(await evaluate("document.querySelectorAll('#results .rank-item').length>=2"),true);
  // Browser quota fault: a failed secondary backup must not lose active data.
@@ -121,6 +138,21 @@ try{
   }finally{Storage.prototype.setItem=original;}
  })()`);
  assert.deepEqual(quotaFault,{saved:'Quota fault',warned:true},'Backup quota error must not lose primary data');
+ // A failed primary write must preserve the previous browser version and warn.
+ const primaryFault=await evaluate(`(()=>{
+  const original=Storage.prototype.setItem,old=localStorage.getItem('klarpunkt.project.v1');
+  Storage.prototype.setItem=function(key,value){
+   if(key==='klarpunkt.project.v1')throw new DOMException('Quota','QuotaExceededError');
+   return original.call(this,key,value);
+  };
+  try{
+   const field=document.querySelector('#project-title');
+   field.value='Failed primary';field.dispatchEvent(new Event('input',{bubbles:true}));
+   return {same:localStorage.getItem('klarpunkt.project.v1')===old,
+    warning:document.querySelector('#save-status').textContent.includes('Ungespeicherte Änderungen')};
+  }finally{Storage.prototype.setItem=original;}
+ })()`);
+ assert.deepEqual(primaryFault,{same:true,warning:true},'Primary write failure must preserve persisted data');
  await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-contrast',value:'more'}]});
  assert.equal(await evaluate("getComputedStyle(document.documentElement).getPropertyValue('--muted').trim()"),'#34495e','High-contrast preference ignored');
  await send('Emulation.setEmulatedMedia',{features:[]});
@@ -154,6 +186,26 @@ try{
  })()`);
  assert.equal(JSON.parse(exported).title,'Offline-Test','UI export content incorrect');
  assert.equal(await evaluate("window.__backupName.endsWith('.json')"),true);
+ // Reject damaged portable files without modifying the active or archived data.
+ const invalidImport=await evaluate(`(async()=>{
+  const beforePrimary=localStorage.getItem('klarpunkt.project.v1');
+  const beforeArchive=localStorage.getItem('klarpunkt.archive.v1');
+  const oldAlert=window.alert;const messages=[];
+  window.alert=message=>messages.push(String(message));
+  try{
+   for(const id of ['import-file','archive-import-file']){
+    const file=new File(['{invalid'],id+'.json',{type:'application/json'});
+    const transfer=new DataTransfer();transfer.items.add(file);
+    const input=document.getElementById(id);input.files=transfer.files;
+    input.dispatchEvent(new Event('change',{bubbles:true}));
+    await new Promise(resolve=>setTimeout(resolve,100));
+   }
+   return {primary:localStorage.getItem('klarpunkt.project.v1')===beforePrimary,
+    archive:localStorage.getItem('klarpunkt.archive.v1')===beforeArchive,
+    alerts:messages.length};
+  }finally{window.alert=oldAlert;}
+ })()`);
+ assert.deepEqual(invalidImport,{primary:true,archive:true,alerts:2},'Corrupted imports must not overwrite browser data');
  await evaluate("window.confirm=()=>true;document.querySelector('#new-project').click()");
  await until("document.querySelector('#project-title').value==='Meine Entscheidung'");
  await evaluate(`(()=>{
@@ -246,7 +298,7 @@ try{
  // Simulate a deployment and verify the new shell survives a cold offline reload.
  await send('Network.emulateNetworkConditions',{offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1});
  const sourceWorker=await readFile(join(root,'sw.js'),'utf8');
- workerOverride=sourceWorker.replace("'klarpunkt-shell-v11'","'klarpunkt-shell-v11-smoke'");
+ workerOverride=sourceWorker.replace("'klarpunkt-shell-v12'","'klarpunkt-shell-v12-smoke'");
  assert.notEqual(workerOverride,sourceWorker,'Worker version marker missing');
  await evaluate("navigator.serviceWorker.ready.then(reg=>reg.update().then(()=>true))");
  await until("caches.keys().then(keys=>keys.includes('klarpunkt-shell-v11-smoke')&&!keys.includes('klarpunkt-shell-v11'))");
@@ -256,7 +308,7 @@ try{
  assert.equal(await evaluate("document.querySelectorAll('#results .rank-item').length>=2"),true,'Offline update missing app modules');
  assert.deepEqual(errors,[],'Uncaught browser exceptions');
  assert.deepEqual(external,[],'Unexpected external HTTP requests');
- console.log('Browser milestone PASS: mobile, touch, backup, genuine multi-tab, archive sync, offline upgrade, JS exceptions, external requests');
+ console.log('Browser milestone PASS: 400% zoom, mobile reflow, touch, backup, corrupt import, primary quota, genuine multi-tab, archive sync, offline upgrade, JS exceptions, external requests');
 }finally{
  for(const p of pending.values()){clearTimeout(p.timer);p.reject(new Error('Closing'));}pending.clear();
  for(const p of pending2.values()){clearTimeout(p.timer);p.reject(new Error('Closing'));}pending2.clear();
