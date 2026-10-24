@@ -97,6 +97,17 @@ try{
  assert.equal(await evaluate("document.querySelector('link[rel=apple-touch-icon]').getAttribute('href')"),'./apple-touch-icon.png');
  assert.equal(await evaluate("document.querySelector('.install-help summary')!==null"),true);
  assert.equal(await evaluate("!!document.querySelector('#archive-export')&&!!document.querySelector('#archive-import')"),true);
+ await evaluate("document.querySelector('#add-option').click()");
+ assert.equal(await evaluate("document.activeElement===document.querySelector('#options .option-entry:last-child input')"),true,'Focus lost after option addition');
+ await evaluate("document.querySelector('#options .option-entry:last-child .icon-button').click()");
+ assert.equal(await evaluate("document.activeElement===document.querySelector('#options .option-entry:last-child input')"),true,'Focus lost after option removal');
+ await evaluate("document.querySelector('#add-criterion').click()");
+ assert.equal(await evaluate("document.activeElement===document.querySelector('#criteria .criterion-card:last-child .criterion-name')"),true,'Focus lost after criterion addition');
+ await evaluate("document.querySelector('#criteria .criterion-card:last-child .icon-button').click()");
+ assert.equal(await evaluate("document.activeElement===document.querySelector('#criteria .criterion-card:last-child .criterion-name')"),true,'Focus lost after criterion removal');
+ assert.equal(await evaluate("[...document.querySelectorAll('input[type=range]')].every(el=>!!el.getAttribute('aria-label'))"),true,'Unlabelled slider');
+ assert.equal(await evaluate("document.querySelector('#results').getAttribute('aria-live')"),'off');
+ await until("document.querySelector('#result-announcement').textContent.length>10");
  assert.equal(await evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),true,'Horizontal overflow on mobile');
  assert.equal(await evaluate("[...document.querySelectorAll('button:not(:disabled)')].filter(b=>b.getClientRects().length>0).every(b=>b.getBoundingClientRect().height>=40)"),true,'Touch targets under 40px');
  await evaluate("document.querySelector('#project-title').value='Offline-Test';document.querySelector('#project-title').dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('#archive-save').click()");

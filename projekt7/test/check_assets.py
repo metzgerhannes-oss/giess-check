@@ -91,3 +91,9 @@ assert "from './archive-transfer.mjs'" in app
 assert "from './unsaved.mjs'" in app
 assert 'if(changed())status.textContent=' in app, "Do not report persisted imports after a failed save"
 assert 'STATIC_PATHS.has(url.pathname)' in sw, "Cache must only include known static assets"
+
+assert 'id="result-announcement"' in html and 'aria-live="off"' in html
+assert "resultAnnouncementTimer" in app
+assert (root / "test/live-smoke.mjs").is_file()
+assert (root / "test/live-verify.test.mjs").is_file()
+assert "workflow_run:" in (root.parent / ".github/workflows/projekt7-checks.yml").read_text(encoding="utf-8")
