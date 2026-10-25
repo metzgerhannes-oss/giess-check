@@ -84,7 +84,7 @@ assert 'id="reload-storage"' in html
 assert 'STORAGE_CONFLICT' in (root / "storage.mjs").read_text(encoding="utf-8")
 # Both recovered and damaged snapshots carry an observed backup revision.
 # Whitespace normalization allows multiline wiring without weakening the gate.
-app_compact=re.sub(r'\\s+','',app)
+app_compact=re.sub(r'\s+','',app)
 assert "storageEventConflicts(event.key,event.newValue,expectedPrimaryRaw,storageState==='recovered'||storageState==='damaged'?expectedRecoveredBackupRaw:undefined)" in app_compact
 assert "(storageState==='recovered'||storageState==='damaged')&&expectedRecoveredBackupRaw!==undefined" in app_compact
 assert "backupRaw:backup" in (root / "storage.mjs").read_text(encoding="utf-8")
