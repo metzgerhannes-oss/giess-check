@@ -30,11 +30,11 @@ export function inspectStorage(storage){
  if(primary===null&&backup===null)return {state:'new',project:starterProject(),primaryRaw:primary};
  try{
   const value=decode(backup);
-  if(value)return {state:'recovered',project:value,primaryRaw:primary};
+  if(value)return {state:'recovered',project:value,primaryRaw:primary,backupRaw:backup};
  }catch{}
  return {state:'damaged',project:starterProject(),primaryRaw:primary};
 }
-export function saveProject(storage,project,override=false,expectedPrimaryRaw=undefined,onBackupFailure=null){
+export function saveProject(storage,project,override=false,expectedPrimaryRaw=undefined,onBackupFailure=null,expectedRecoveredBackupRaw=undefined){
  const clean=validateProject(project);
  const current=storage.getItem(PRIMARY_KEY);
  // Best-effort optimistic precondition: localStorage has no atomic compare-and-swap.
@@ -53,20 +53,26 @@ export function saveProject(storage,project,override=false,expectedPrimaryRaw=un
  const nextRaw=JSON.stringify(clean);
  if(new TextEncoder().encode(nextRaw).byteLength>MAX_BACKUP_BYTES)throw new Error('Projekt überschreitet die sichere Speichergröße.');
  let backupRaw=null;
- let expectedBackupRaw=undefined;
+ let observedBackupRaw=undefined;
  let backupReadError=null;
  if(last){
   // A valid primary is authoritative. Failure to read the optional recovery
   // key must not prevent saving it; instead warn and leave the backup alone.
   backupRaw=JSON.stringify(last);
-  try{expectedBackupRaw=storage.getItem(BACKUP_KEY);}
+  try{observedBackupRaw=storage.getItem(BACKUP_KEY);}
   catch(error){backupReadError=error;}
  }else{
   // A missing primary does not mean a fresh installation: the recovery copy
   // may contain the only surviving project. Never shadow it implicitly.
   // A damaged primary still needs explicit override (checked above).
   const previousBackup=storage.getItem(BACKUP_KEY);
-  expectedBackupRaw=previousBackup;
+  observedBackupRaw=previousBackup;
+  // A recovery tab may be stale even when its primary revision is unchanged.
+  if(expectedRecoveredBackupRaw!==undefined&&previousBackup!==expectedRecoveredBackupRaw){
+   const error=new Error('Wiederherstellungskopie wurde seit dem Laden geändert.');
+   error.code='STORAGE_CONFLICT';
+   throw error;
+  }
   if(current===null&&previousBackup!==null&&!override){
    const error=new Error('Wiederherstellungskopie vorhanden. Bitte den Browserstand zuerst prüfen und ausdrücklich wiederherstellen.');
    error.code='STORAGE_RECOVERY_REQUIRED';
@@ -84,7 +90,7 @@ export function saveProject(storage,project,override=false,expectedPrimaryRaw=un
  // If there was no valid primary, the recovery copy may be the sole
  // surviving state. Recheck it before creating a new authoritative primary:
  // another tab could have repaired or replaced the backup during validation.
- if(!last&&storage.getItem(BACKUP_KEY)!==expectedBackupRaw){
+ if(!last&&storage.getItem(BACKUP_KEY)!==observedBackupRaw){
   const error=new Error('Wiederherstellungskopie wurde während des Speicherns geändert.');
   error.code='STORAGE_CONFLICT';
   throw error;
@@ -115,7 +121,7 @@ export function saveProject(storage,project,override=false,expectedPrimaryRaw=un
    if(backupReadError)throw backupReadError;
    // Do not overwrite another tab's newer recovery copy. This is a best-effort
    // revision guard; localStorage cannot atomically compare and write two keys.
-   if(storage.getItem(BACKUP_KEY)!==expectedBackupRaw){
+   if(storage.getItem(BACKUP_KEY)!==observedBackupRaw){
     throw new Error('Zusätzliche Sicherung wurde zwischenzeitlich geändert.');
    }
    storage.setItem(BACKUP_KEY,backupRaw);
@@ -146,6 +152,16 @@ export function inspectPrimaryRevision(storage,expectedRaw){
 
 // A storage.clear() event has key=null and newValue=null. It must invalidate
 // a tab even when that tab originally observed an empty primary key.
-export function storageEventConflicts(key,newValue,expectedRaw){
- return key===null||(key===PRIMARY_KEY&&newValue!==expectedRaw);
+// Healthy primaries do not need their optional backup to be readable.
+export function inspectBackupRevision(storage,expectedRaw){
+ if(!storage)return 'unavailable';
+ let current;
+ try{current=storage.getItem(BACKUP_KEY);}
+ catch{return 'unavailable';}
+ if(expectedRaw===undefined)return 'unverified';
+ return current===expectedRaw?'unchanged':'changed';
+}
+export function storageEventConflicts(key,newValue,expectedRaw,expectedRecoveredBackupRaw=undefined){
+ return key===null||(key===PRIMARY_KEY&&newValue!==expectedRaw)||
+  (expectedRecoveredBackupRaw!==undefined&&key===BACKUP_KEY&&newValue!==expectedRecoveredBackupRaw);
 }

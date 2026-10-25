@@ -1,5 +1,5 @@
 import {starterProject,blankProject,validateProject,evaluate,MAX_OPTIONS,MAX_CRITERIA} from './core.mjs';
-import {inspectStorage,saveProject,inspectPrimaryRevision,storageEventConflicts,PRIMARY_KEY} from './storage.mjs';
+import {inspectStorage,saveProject,inspectPrimaryRevision,inspectBackupRevision,storageEventConflicts,PRIMARY_KEY} from './storage.mjs';
 import {createHistory} from './history.mjs';
 import {createUnsavedGuard} from './unsaved.mjs';
 import {readArchive,addSnapshot,removeSnapshot,ARCHIVE_CAP,ARCHIVE_KEY} from './archive.mjs';
@@ -20,6 +20,7 @@ let project=initial.project;
 let history=createHistory(project);
 let storageState=initial.state;
 let expectedPrimaryRaw=initial.primaryRaw;
+let expectedRecoveredBackupRaw=initial.backupRaw;
 let expectedArchiveRaw=undefined;
 let idCounter=0;
 let resultAnnouncementTimer;
@@ -53,8 +54,9 @@ function save(record=true){
  }
  try{
   let backupWarning=false;
-  const clean=saveProject(window.localStorage,project,storageState==='recovered',expectedPrimaryRaw,()=>{backupWarning=true;});
+  const clean=saveProject(window.localStorage,project,storageState==='recovered',expectedPrimaryRaw,()=>{backupWarning=true;},storageState==='recovered'?expectedRecoveredBackupRaw:undefined);
   expectedPrimaryRaw=JSON.stringify(clean);
+  expectedRecoveredBackupRaw=undefined;
   storageState='ok';
   unsavedGuard.setDirty(false);
   status.textContent=backupWarning
@@ -378,6 +380,7 @@ byId('reload-storage').addEventListener('click',()=>{
  unsavedGuard.setDirty(false);
  storageState=fresh.state;
  expectedPrimaryRaw=fresh.primaryRaw;
+ expectedRecoveredBackupRaw=fresh.backupRaw;
  byId('reload-storage').hidden=true;
  renderAll();
  updateHistoryButtons();
@@ -390,6 +393,9 @@ byId('reload-storage').addEventListener('click',()=>{
 function reconcileOnReturn(){
  const revision=inspectPrimaryRevision(browserStore(),expectedPrimaryRaw);
  if(storageState!=='conflict'&&(revision==='changed'||revision==='unverified'))markConflict();
+ // Frozen tabs may miss backup-key storage events entirely.
+ if(storageState==='recovered'&&expectedRecoveredBackupRaw!==undefined&&
+    inspectBackupRevision(browserStore(),expectedRecoveredBackupRaw)!=='unchanged')markConflict();
  else if(revision==='unavailable'&&unsavedGuard.isDirty()&&storageState!=='conflict'){
   status.textContent='Ungespeicherte Änderungen! Browser-Speicher derzeit nicht lesbar. Bitte JSON-Sicherung herunterladen.';
  }
@@ -404,7 +410,7 @@ document.addEventListener('visibilitychange',()=>{
  if(document.visibilityState==='visible')reconcileOnReturn();
 });
 window.addEventListener('storage',event=>{
- if(storageEventConflicts(event.key,event.newValue,expectedPrimaryRaw))markConflict();
+ if(storageEventConflicts(event.key,event.newValue,expectedPrimaryRaw,storageState==='recovered'?expectedRecoveredBackupRaw:undefined))markConflict();
  if(event.key===ARCHIVE_KEY||event.key===null)renderArchive();
 });
 renderAll();

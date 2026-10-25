@@ -149,3 +149,12 @@ Nach erfolgreicher Übernahme aller Shell-Dateien gilt die Aktualisierung erst d
 ## Sprint 43: geschützte Wiederherstellung bei fehlendem Primärstand
 
 Ein fehlender Primärschlüssel ist nicht automatisch ein neues Projekt: Eine vorhandene lokale Wiederherstellungskopie kann die einzige verbleibende Fassung enthalten. Ohne ausdrücklich autorisierte Wiederherstellung lehnt die Speicherlogik deshalb das Anlegen eines neuen Primärstands ab und verändert keinen der beiden Schlüssel. Bei expliziter Wiederherstellung bleibt die vorhandene Sicherung unangetastet. Ist der Primärstand beschädigt, wird eine zwischenzeitliche Änderung der Wiederherstellungskopie vor dem Schreiben erneut geprüft. Gleiches gilt für den fehlenden Primärstand, wenn die Sicherung zwischen Prüfung und Schreiben von einem anderen Tab geändert wird. Neue Regressionstests prüfen Wiederherstellungspflicht, sichere Freigabe, Quota-/Lesefehler, konkurrierende Sicherungsänderungen und die unveränderte Erstinstallation. Der Check ist Best Effort: `localStorage` besitzt kein atomares Compare-and-Swap über mehrere Schlüssel. Die Offline-Shell-Version wurde wegen des geänderten Speichermoduls erhöht.
+
+## Sprint 45: Revisionsschutz für wiederhergestellte Browserstände
+
+Nur im Recovery-Zustand wird der beim Laden beobachtete Backup-Rohwert als
+optimistische Schreibbedingung mitgeführt. Speicher-Events und Rückkehr aus
+einem eingefrorenen Tab prüfen zusätzlich diese Backup-Revision. Eine
+zwischenzeitlich geänderte oder gelöschte Sicherung führt zum Abbruch vor
+dem ersten Schreibzugriff. Gesunde Primärdaten bleiben von optionalen
+Backup-Lesefehlern unabhängig. localStorage bietet kein atomares CAS.
