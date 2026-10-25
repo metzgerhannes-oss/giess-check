@@ -818,3 +818,40 @@ test('a valid stage reconciles an active shell even when every asset URL exists'
  assert.equal(restarted.networkCalls,0);
  assert.equal(restarted.versions.has(shellVersion+'-recovery'),false);
 });
+
+for(const [label,writeFault] of [
+ ['successful',{}],
+ ['quota-rejected',{failPutAt:1}],
+ ['persisted-but-rejected',{failPutAfterWriteAt:1}]
+]){
+ test('pending '+label+' runtime write cannot serve stale bytes after concurrent shell promotion',async()=>{
+  const sw=worker({
+   holdPut:true,...writeFault,
+   networkResponse:req=>({
+    ok:true,status:200,redirected:false,type:'basic',url:req.url,
+    headers:{get:name=>name==='content-type'?'text/javascript':null},
+    staleRuntime:true,clone(){return this;}
+   })
+  });
+  await sw.lifecycle('install');
+  const entries=sw.versions.get(shellVersion);
+  const appUrl=new URL('./app.mjs',scope).href;
+  entries.delete(appUrl);
+  entries.delete(new URL('./core.mjs',scope).href);
+  const pendingAsset=sw.dispatch(sw.request('./app.mjs'));
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(sw.putCalls,1,'Runtime write must be pending');
+  const navigation=sw.dispatch(sw.request('./index.html',{mode:'navigate'}));
+  // Let recovery enter its durable promotion fence while the runtime write
+  // remains pending. The recovery must drain that write before restaging.
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(sw.addAllCalls,1,'Staging must wait for pending runtime writes');
+  sw.releasePut();
+  const [asset,page]=await Promise.all([pendingAsset,navigation]);
+  assert.equal(page.headers.get('content-type'),'text/html');
+  assert.equal(sw.addAllCalls,2,'A second missing asset forces whole-shell recovery');
+  assert.equal(asset,entries.get(appUrl),'Runtime response must be the promoted cache asset');
+  assert.equal(asset.staleRuntime,undefined,'Pre-promotion network bytes must not escape');
+  assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
+ });
+}

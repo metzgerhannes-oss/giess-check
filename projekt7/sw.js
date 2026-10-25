@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v33';
+const VERSION='klarpunkt-shell-v34';
 const SHELL_PREFIX='klarpunkt-shell-v';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Cache only this app's immutable shell paths, never arbitrary data or URL variants.
@@ -175,6 +175,15 @@ self.addEventListener('activate',event=>{
   await self.clients.claim();
  }));
 });
+// Runtime writes may resolve AFTER a navigation has started whole-shell
+// promotion. In that case the old network response is not safe to deliver:
+// re-read the epoch-stable promoted asset instead, or fail closed.
+async function promotedRuntimeAsset(cache,request,shellPath){
+ try{
+  const current=await stableCacheHit(cache,request);
+  return trustedShellAsset(current,shellPath)?current:Response.error();
+ }catch{return Response.error();}
+}
 self.addEventListener('fetch',event=>{
  const request=event.request;
  if(request.method!=='GET')return;
@@ -220,10 +229,7 @@ self.addEventListener('fetch',event=>{
   // A full recovery may start AND finish while the network request is
   // pending. Never write that pre-recovery response over the validated shell.
   if(recoveryInFlight||shellEpoch!==beforeFetch){
-   try{
-    const recovered=await stableCacheHit(cache,request);
-    return trustedShellAsset(recovered,shellPath)?recovered:Response.error();
-   }catch{return Response.error();}
+   return promotedRuntimeAsset(cache,request,shellPath);
   }
   // Apply precache MIME, origin and redirect checks to runtime repairs too.
   if(!trustedShellAsset(response,shellPath))return Response.error();
@@ -231,11 +237,18 @@ self.addEventListener('fetch',event=>{
   // repairs already in flight, but quota failure still permits online use.
   let writing;
   try{writing=cache.put(request,response.clone());}
-  catch{return response;}
+  catch{
+   return recoveryInFlight||shellEpoch!==beforeFetch
+    ?promotedRuntimeAsset(cache,request,shellPath):response;
+  }
   runtimeWrites.add(writing);
   try{await writing;}
-  catch{ /* Online delivery remains possible; offline navigation verifies the full shell. */ }
+  catch{ /* An online response is usable only if no whole-shell promotion raced. */ }
   finally{runtimeWrites.delete(writing);}
-  return response;
+  // A recovery can start while the CacheStorage write is pending, even if
+  // the network response was current when its write began. Never return that
+  // pre-promotion response after the shell epoch has changed.
+  return recoveryInFlight||shellEpoch!==beforeFetch
+   ?promotedRuntimeAsset(cache,request,shellPath):response;
  }));
 });
