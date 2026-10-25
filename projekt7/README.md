@@ -189,3 +189,16 @@ Wiederherstellung, nicht bei gewöhnlichen Cache-Treffern. Grenzen bleiben
 nicht atomare CacheStorage-Operationen, vollständige Browser-Eviction und
 fehlende physische iPhone-/Safari-Abnahme. Die Tests verwenden ausschließlich
 synthetische Antworten und keine Produktivdaten.
+
+## Sprint 49: Nachweis dauerhaft angelegter Offline-Sperren
+
+Eine erfolgreich abgeschlossene CacheStorage-Öffnung garantiert nicht, dass
+der neue Cache im persistenten Verzeichnis erscheint. Vor dem ersten aktiven
+Schreibvorgang einer Wiederherstellung wird deshalb die tatsächliche Existenz
+der Sperre erneut geprüft, auch nach dem Staging. Bei fehlendem Nachweis wird
+keine Promotion gestartet. Bei unbestätigten Runtime-Schreibvorgängen darf
+eine nicht dauerhaft angelegte Sperre keinen Erfolg melden: Die verdächtige
+Datei wird nach Möglichkeit entfernt und der Zugriff gesperrt. Drei
+synthetische Regressionen decken nicht persistiertes Staging, korrupte
+Runtime-Bytes und still verworfene Schreibvorgänge ab. CacheStorage bleibt
+nicht atomar; eine vollständige Browser-Eviction kann nicht verhindert werden.
