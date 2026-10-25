@@ -22,7 +22,7 @@ assert "fetch(publicRequest,{credentials:'omit'})" in sw, "Runtime shell repair 
 assert "new Request(new URL(shellPath,self.registration.scope)" in sw, "Runtime repair must strip page-controlled headers"
 assert "cache.put(publicRequest,response.clone())" in sw, "Offline cache keys must use the anonymous canonical request"
 assert 'storage.mjs' in sw and 'history.mjs' in sw and 'unsaved.mjs' in sw and 'archive.mjs' in sw and 'archive-transfer.mjs' in sw and 'backup.mjs' in sw, "Offline cache must include required app modules"
-assert "import {inspectStorage,saveProject,inspectPrimaryRevision,storageEventConflicts,PRIMARY_KEY} from './storage.mjs'" in app
+assert "import {inspectStorage,saveProject,inspectPrimaryRevision,inspectBackupRevision,storageEventConflicts,PRIMARY_KEY} from './storage.mjs'" in app
 assert "if(initial.state==='new')save(false);" in app, "Never overwrite corrupted storage at startup"
 
 required = ["index.html", "style.css", "app.mjs", "core.mjs", "icon.svg",
@@ -82,7 +82,7 @@ for fg,bg in [('#1c2b3a','#ffffff'),('#536272','#ffffff'),('#a7e8d9','#1e4967'),
 
 assert 'id="reload-storage"' in html
 assert 'STORAGE_CONFLICT' in (root / "storage.mjs").read_text(encoding="utf-8")
-assert "storageEventConflicts(event.key,event.newValue,expectedPrimaryRaw)" in app
+assert "storageEventConflicts(event.key,event.newValue,expectedPrimaryRaw,storageState==='recovered'?expectedRecoveredBackupRaw:undefined)" in app
 assert "key===null" in (root / "storage.mjs").read_text(encoding="utf-8")
 assert re.search(r"^const VERSION='klarpunkt-shell-v[0-9]+';", sw, re.M)
 assert "cache.match('./index.html')" in sw, "Version-consistent navigation required"
