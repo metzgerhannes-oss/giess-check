@@ -205,3 +205,18 @@ nicht atomar; eine vollständige Browser-Eviction kann nicht verhindert werden.
 
 ## Sprint 50: destruktive und sitzungsbezogene HTTP-Metadaten
 Der Offline-Trust-Gate lehnt statische Antworten mit `Clear-Site-Data`, `Refresh`, `WWW-Authenticate` oder `Proxy-Authenticate` ab. Ebenso sind Content-Disposition-Werte außer `inline` nicht mehr cachefähig. Das gilt für Installation, Runtime-Nachladung und bereits vorhandene Cache-Treffer; synthetische Regressionen prüfen die drei Pfade und weiterhin erlaubte öffentliche Inline-Assets. Die Shell-Version wurde auf v44 angehoben. Der Filter schützt vor der Wiederverwendung gefährlicher Header im Offline-Cache, kann aber nicht verhindern, dass ein Browser bereits beim ursprünglichen HTTP-Empfang einen Header verarbeitet. Lokale JSON-Sicherungen bleiben erforderlich.
+
+
+## Sprint 52: Read-only-Notfallsicherung beschädigter Browserdaten
+
+Bei beschädigtem Primärstand, Wiederherstellungskopie, Speicherkonflikt oder
+beschädigtem Archiv steht ein expliziter Rohdaten-Export zur Verfügung.
+Er sichert die **exakten** lokalen Rohwerte von Primärstand, Backup und Archiv
+in eine lokale JSON-Datei, ohne einen Browser-Schreibzugriff. Dieses Format
+ist absichtlich nicht über reguläre Importwege einlesbar: beschädigte Daten
+dürfen nicht ungeprüft übernommen werden. Die Sicherung ist auf 2 MB begrenzt;
+eine zweite Leseprüfung erkennt zwischenzeitliche Tab-Änderungen bestmöglich.
+Lesefehler, Übergröße und Revisionskonflikte brechen ohne Mutation ab.
+Die Datei kann sensible lokale Inhalte enthalten und muss sicher aufbewahrt
+werden. Vollständige Browser-Eviction und fehlende atomare Transaktionen
+bleiben technische Grenzen. Offline-Shell v45.
