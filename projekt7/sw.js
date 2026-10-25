@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v43';
+const VERSION='klarpunkt-shell-v44';
 const SHELL_PREFIX='klarpunkt-shell-v';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Fetch public shell bytes without browser cookies or HTTP credentials.
@@ -31,6 +31,11 @@ function trustedShellAsset(response,path){
  if(cacheControl.split(',').some(value=>/^(?:no-store|no-cache|private)(?:\s*(?:=|$))/i.test(value.trim())))return false;
  // Never persist session-setting responses in a public offline shell.
  if(headers?.get('set-cookie')||headers?.get('set-cookie2'))return false;
+ // A public offline response must not carry commands that clear browser data,
+ // trigger HTTP refresh navigation or negotiate a private authentication flow.
+ // Such headers are unsafe even when the status and MIME appear legitimate.
+ if(headers?.get('clear-site-data')||headers?.get('refresh')||
+    headers?.get('www-authenticate')||headers?.get('proxy-authenticate'))return false;
  const vary=headers?.get('vary')||'';
  // Only harmless content-negotiation dimensions are safe in a public offline
  // shell. Unknown Vary keys can conceal per-session or authorization variants.
@@ -38,7 +43,10 @@ function trustedShellAsset(response,path){
  // A full HTTP 200 asset must not carry any range metadata, even a
  // non-byte unit or malformed range that the browser would otherwise accept.
  if((headers?.get('content-range')||'').trim())return false;
- if(/^\s*attachment(?:\s*;|$)/i.test(headers?.get('content-disposition')||''))return false;
+ const disposition=headers?.get('content-disposition')||'';
+ // Only inline assets belong in an executable offline shell. Unknown or
+ // form-data dispositions must not be normalized into a trusted resource.
+ if(disposition&&!/^\s*inline(?:\s*(?:;|$))/i.test(disposition))return false;
  if(/^\s*0\s*$/.test(headers?.get('content-length')||''))return false;
  const type=headers?.get('content-type')?.split(';')[0]?.trim().toLowerCase();
  const kind=path==='./'||path.endsWith('.html')?'html':

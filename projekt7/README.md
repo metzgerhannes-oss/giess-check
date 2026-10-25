@@ -202,3 +202,6 @@ Datei wird nach Möglichkeit entfernt und der Zugriff gesperrt. Drei
 synthetische Regressionen decken nicht persistiertes Staging, korrupte
 Runtime-Bytes und still verworfene Schreibvorgänge ab. CacheStorage bleibt
 nicht atomar; eine vollständige Browser-Eviction kann nicht verhindert werden.
+
+## Sprint 50: destruktive und sitzungsbezogene HTTP-Metadaten
+Der Offline-Trust-Gate lehnt statische Antworten mit `Clear-Site-Data`, `Refresh`, `WWW-Authenticate` oder `Proxy-Authenticate` ab. Ebenso sind Content-Disposition-Werte außer `inline` nicht mehr cachefähig. Das gilt für Installation, Runtime-Nachladung und bereits vorhandene Cache-Treffer; synthetische Regressionen prüfen die drei Pfade und weiterhin erlaubte öffentliche Inline-Assets. Die Shell-Version wurde auf v44 angehoben. Der Filter schützt vor der Wiederverwendung gefährlicher Header im Offline-Cache, kann aber nicht verhindern, dass ein Browser bereits beim ursprünglichen HTTP-Empfang einen Header verarbeitet. Lokale JSON-Sicherungen bleiben erforderlich.

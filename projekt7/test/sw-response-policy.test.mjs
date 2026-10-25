@@ -55,6 +55,12 @@ for(const [label,headers] of [
  ['wildcard vary',{'vary':'Accept-Encoding, *'}],
  ['partial content',{'content-range':'bytes 0-100/200'}],
  ['download disposition',{'content-disposition':'attachment; filename="app.mjs"'}],
+ ['form-data disposition',{'content-disposition':'form-data; name="asset"'}],
+ ['unknown disposition',{'content-disposition':'opaque'}],
+ ['clear-site-data directive',{'clear-site-data':'"storage", "cache"'}],
+ ['HTTP refresh redirect',{'refresh':'0; url=https://elsewhere.test/'}],
+ ['HTTP authentication challenge',{'www-authenticate':'Basic realm="session"'}],
+ ['proxy authentication challenge',{'proxy-authenticate':'Basic realm="session"'}],
  ['empty asset',{'content-length':'0'}],
  ['private response',{'cache-control':'private, max-age=3600'}],
  ['revalidation required',{'cache-control':'no-cache'}],
@@ -134,12 +140,30 @@ test('cache entries marked private or varying by user are never reused',async()=
  assert.equal(h.fetches,3);
  assert.equal(h.writes,3);
 });
-test('safe cache variation and public cache-control remain valid',()=>{
+test('safe cache variation, inline disposition and public cache-control remain valid',()=>{
  const h=harness();
  assert.equal(h.trusted(h.response('./app.mjs',{
   'content-type':'text/javascript','cache-control':'public, max-age=3600',
-  'vary':'Accept-Encoding, Accept-Language'
+  'vary':'Accept-Encoding, Accept-Language',
+  'content-disposition':'inline; filename="app.mjs"'
  }), './app.mjs'),true);
+});
+test('dangerous metadata on cached shell bytes is never replayed offline',async()=>{
+ const h=harness(),key=new URL('./app.mjs',scope).href;
+ for(const headers of [
+  {'clear-site-data':'"storage"'}, {'refresh':'0; url=/logout'},
+  {'www-authenticate':'Basic realm="account"'},
+  {'proxy-authenticate':'Basic realm="proxy"'},
+  {'content-disposition':'form-data; name="file"'}
+ ]){
+  const untrusted=h.response('./app.mjs',{'content-type':'text/javascript',...headers});
+  h.entries.set(key,untrusted);
+  const cached=await h.dispatch({...h.request('./app.mjs'),cache:'only-if-cached'});
+  assert.equal(cached.networkError,true,'Unsafe cached response must fail closed');
+  assert.equal(h.entries.get(key),untrusted,'Read must not silently rewrite user cache');
+ }
+ assert.equal(h.fetches,0,'Offline request must not trigger a network fetch');
+ assert.equal(h.writes,0,'Unsafe cached bytes must never be promoted');
 });
 
 

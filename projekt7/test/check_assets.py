@@ -169,3 +169,9 @@ assert sw.index('await sameShellBytes(expected,stored)') < sw.index('await cache
 assert 'if(!confirmed&&(writeSucceeded||stored))' in sw
 assert 'await caches.open(RECOVERY_CACHE)' in sw
 assert 'runtimeWrites.add(writing)' in sw
+
+# Sprint 50: no destructive browser-data commands, HTTP refresh or
+# authentication challenges may be persisted as public offline assets.
+for header in ('clear-site-data', 'refresh', 'www-authenticate', 'proxy-authenticate'):
+    assert "headers?.get('" + header + "')" in sw, header
+assert "if(disposition&&!/^\\s*inline" in sw, 'Non-inline assets must be rejected'
