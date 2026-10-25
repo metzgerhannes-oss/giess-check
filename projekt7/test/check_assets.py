@@ -18,7 +18,9 @@ assert not re.search(r'<script[^>]*>\s*[^<]', html), "Inline scripts are not all
 assert manifest["start_url"] == "./index.html"
 assert manifest["scope"] == "./"
 assert manifest["display"] == "standalone"
-assert "fetch(request,{credentials:'omit'})" in sw, "Runtime shell repair must omit credentials"
+assert "fetch(publicRequest,{credentials:'omit'})" in sw, "Runtime shell repair must omit credentials"
+assert "new Request(new URL(shellPath,self.registration.scope)" in sw, "Runtime repair must strip page-controlled headers"
+assert "cache.put(publicRequest,response.clone())" in sw, "Offline cache keys must use the anonymous canonical request"
 assert 'storage.mjs' in sw and 'history.mjs' in sw and 'unsaved.mjs' in sw and 'archive.mjs' in sw and 'archive-transfer.mjs' in sw and 'backup.mjs' in sw, "Offline cache must include required app modules"
 assert "import {inspectStorage,saveProject,inspectPrimaryRevision,storageEventConflicts,PRIMARY_KEY} from './storage.mjs'" in app
 assert "if(initial.state==='new')save(false);" in app, "Never overwrite corrupted storage at startup"
