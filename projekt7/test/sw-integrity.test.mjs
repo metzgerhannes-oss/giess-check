@@ -479,3 +479,64 @@ test('long offline session reuses a complete shell without network or cache writ
  assert.equal(sw.addAllCalls,1,'No recovery should be needed for a healthy shell');
  assert.equal(sw.versions.get(shellVersion).size,initialSize);
 });
+
+test('concurrent static requests wait for staged promotion before reading the active cache',async()=>{
+ const sw=worker({holdPut:true});
+ await sw.lifecycle('install');
+ sw.versions.get(shellVersion).delete(new URL('./core.mjs',scope).href);
+ const navigation=sw.dispatch(sw.request('./index.html',{mode:'navigate'}));
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(sw.putCalls,1,'Promotion must be paused on its first write');
+ let delivered=false;
+ const asset=sw.dispatch(sw.request('./app.mjs')).then(value=>{delivered=true;return value;});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(delivered,false,'Static asset must wait for promotion, not serve stale cache');
+ assert.equal(sw.networkCalls,0,'No competing runtime repair during promotion');
+ sw.releasePut();
+ const [page,script]=await Promise.all([navigation,asset]);
+ assert.equal(page.headers.get('content-type'),'text/html');
+ assert.equal(script.headers.get('content-type'),'text/javascript');
+ assert.equal(sw.versions.get(shellVersion).size,shell.length);
+});
+test('failed concurrent promotion does not expose stale static assets',async()=>{
+ const sw=worker({holdPut:true,failPut:true});
+ await sw.lifecycle('install');
+ sw.versions.get(shellVersion).delete(new URL('./core.mjs',scope).href);
+ const navigation=sw.dispatch(sw.request('./index.html',{mode:'navigate'}));
+ await new Promise(resolve=>setImmediate(resolve));
+ const asset=sw.dispatch(sw.request('./app.mjs'));
+ sw.releasePut();
+ assert.deepEqual(await navigation,{networkError:true});
+ assert.deepEqual(await asset,{networkError:true});
+ assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
+});
+test('recovery drains a pending runtime repair and avoids unnecessary restaging',async()=>{
+ const sw=worker({holdPut:true});
+ await sw.lifecycle('install');
+ sw.versions.get(shellVersion).delete(new URL('./core.mjs',scope).href);
+ const repairing=sw.dispatch(sw.request('./core.mjs'));
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(sw.putCalls,1);
+ const navigation=sw.dispatch(sw.request('./index.html',{mode:'navigate'}));
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(sw.addAllCalls,1,'Recovery must wait for the existing repair');
+ sw.releasePut();
+ const [asset,page]=await Promise.all([repairing,navigation]);
+ assert.equal(asset.headers.get('content-type'),'text/javascript');
+ assert.equal(page.headers.get('content-type'),'text/html');
+ assert.equal(sw.addAllCalls,1,'Completed repair avoids a redundant shell download');
+ assert.equal(sw.versions.get(shellVersion).size,shell.length);
+});
+test('activation prunes orphaned staging caches but retains previous-worker staging',async()=>{
+ const sw=worker(),version=Number(shellVersion.split('-v').at(-1));
+ const orphan='klarpunkt-shell-v'+(version-2)+'-recovery';
+ const previous=oldShellVersion+'-recovery';
+ const future='klarpunkt-shell-v'+(version+1)+'-recovery';
+ for(const key of [orphan,previous,future,'unrelated-app-recovery'])sw.versions.set(key,new Map());
+ await sw.lifecycle('install');
+ await sw.lifecycle('activate');
+ assert.equal(sw.versions.has(orphan),false);
+ for(const key of [previous,future,'unrelated-app-recovery',oldShellVersion]){
+  assert.equal(sw.versions.has(key),true,key+' must be retained');
+ }
+});

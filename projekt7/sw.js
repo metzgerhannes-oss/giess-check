@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v27';
+const VERSION='klarpunkt-shell-v28';
 const SHELL_PREFIX='klarpunkt-shell-v';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Cache only this app's immutable shell paths, never arbitrary data or URL variants.
@@ -46,8 +46,13 @@ async function completeShell(cache){
 // fail closed, and the preceding release is never modified.
 const RECOVERY_CACHE=VERSION+'-recovery';
 let recoveryInFlight=null;
+// Runtime asset repairs and whole-shell promotion must not write the same
+// cache concurrently. An in-flight repair may complete the shell by itself.
+const runtimeWrites=new Set();
 async function recoverShell(cache){
  if(!recoveryInFlight)recoveryInFlight=(async()=>{
+  await Promise.allSettled([...runtimeWrites]);
+  if(await completeShell(cache))return cache.match('./index.html');
   const staged=await caches.open(RECOVERY_CACHE);
   try{
    await staged.addAll(FILES);
@@ -72,10 +77,17 @@ async function recoverShell(cache){
 // Cache cleanup failures must not strand a complete new offline shell.
 async function pruneOlderShells(){
  const current=Number(VERSION.slice(SHELL_PREFIX.length));
- const older=(await caches.keys()).map(key=>({key,match:/^klarpunkt-shell-v([1-9]\d*)$/.exec(key)}))
+ const names=await caches.keys();
+ const older=names.map(key=>({key,match:/^klarpunkt-shell-v([1-9]\d*)$/.exec(key)}))
   .filter(({match})=>match&&Number.isSafeInteger(Number(match[1]))&&Number(match[1])<current)
   .sort((a,b)=>Number(b.match[1])-Number(a.match[1]));
- await Promise.allSettled(older.slice(1).map(({key})=>caches.delete(key)));
+ // Crashed recovery workers can leave orphaned staging caches. Keep the
+ // preceding release's staging cache while its worker may still be active.
+ const orphaned=names.filter(key=>{
+  const match=/^klarpunkt-shell-v([1-9]\d*)-recovery$/.exec(key);
+  return match&&Number.isSafeInteger(Number(match[1]))&&Number(match[1])<current-1;
+ });
+ await Promise.allSettled([...older.slice(1).map(({key})=>key),...orphaned].map(key=>caches.delete(key)));
 }
 self.addEventListener('install',event=>{
  event.waitUntil(caches.open(VERSION).then(async cache=>{
@@ -123,17 +135,32 @@ self.addEventListener('fetch',event=>{
  if(!STATIC_PATHS.has(url.pathname))return;
  event.respondWith(caches.open(VERSION).then(async cache=>{
   const shellPath=PATH_BY_PATHNAME.get(url.pathname);
-  const hit=await cache.match(request);
-  // Revalidate cache hits: entries may change after the activation check.
+  let hit=await cache.match(request);
+  // A concurrent navigation can start recovery while a cache read is pending.
+  // Do not serve an older entry from a shell being promoted, or race a repair
+  // write against whole-shell promotion.
+  if(recoveryInFlight){
+   try{await recoveryInFlight;}catch{return Response.error();}
+   hit=await cache.match(request);
+  }
   if(trustedShellAsset(hit,shellPath))return hit;
   const response=await fetch(request);
+  if(recoveryInFlight){
+   try{await recoveryInFlight;}catch{return Response.error();}
+   const recovered=await cache.match(request);
+   if(trustedShellAsset(recovered,shellPath))return recovered;
+  }
   // Apply precache MIME, origin and redirect checks to runtime repairs too.
   if(!trustedShellAsset(response,shellPath))return Response.error();
-  // A fetch event may end as soon as its response settles. Await the
-  // best-effort cache write so a repaired asset is actually durable before
-  // delivery; a quota/permission failure must still allow online use.
-  try{await cache.put(request,response.clone());}
-  catch{ /* Online delivery remains possible; offline navigation still checks the full shell. */ }
+  // Track and await each best-effort write: whole-shell recovery waits for
+  // repairs already in flight, but quota failure still permits online use.
+  let writing;
+  try{writing=cache.put(request,response.clone());}
+  catch{return response;}
+  runtimeWrites.add(writing);
+  try{await writing;}
+  catch{ /* Online delivery remains possible; offline navigation verifies the full shell. */ }
+  finally{runtimeWrites.delete(writing);}
   return response;
  }));
 });
