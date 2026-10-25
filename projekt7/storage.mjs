@@ -62,17 +62,30 @@ export function saveProject(storage,project,override=false,expectedPrimaryRaw=un
   try{expectedBackupRaw=storage.getItem(BACKUP_KEY);}
   catch(error){backupReadError=error;}
  }else{
-  // Without a valid primary, a denied backup read could hide recoverable data.
+  // A missing primary does not mean a fresh installation: the recovery copy
+  // may contain the only surviving project. Never shadow it implicitly.
+  // A damaged primary still needs explicit override (checked above).
   const previousBackup=storage.getItem(BACKUP_KEY);
-  if(current===null&&previousBackup===null){
-   backupRaw=nextRaw;
-   expectedBackupRaw=previousBackup;
+  expectedBackupRaw=previousBackup;
+  if(current===null&&previousBackup!==null&&!override){
+   const error=new Error('Wiederherstellungskopie vorhanden. Bitte den Browserstand zuerst prüfen und ausdrücklich wiederherstellen.');
+   error.code='STORAGE_RECOVERY_REQUIRED';
+   throw error;
   }
+  if(current===null&&previousBackup===null)backupRaw=nextRaw;
  }
  // A second read narrows the inter-tab race window. A revision observed during
  // backup preparation must never be silently replaced by this tab.
  if(storage.getItem(PRIMARY_KEY)!==current){
   const error=new Error('Der Browserstand wurde während des Speicherns geändert.');
+  error.code='STORAGE_CONFLICT';
+  throw error;
+ }
+ // If there was no valid primary, the recovery copy may be the sole
+ // surviving state. Recheck it before creating a new authoritative primary:
+ // another tab could have repaired or replaced the backup during validation.
+ if(!last&&storage.getItem(BACKUP_KEY)!==expectedBackupRaw){
+  const error=new Error('Wiederherstellungskopie wurde während des Speicherns geändert.');
   error.code='STORAGE_CONFLICT';
   throw error;
  }
