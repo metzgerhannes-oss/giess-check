@@ -18,7 +18,7 @@ assert not re.search(r'<script[^>]*>\s*[^<]', html), "Inline scripts are not all
 assert manifest["start_url"] == "./index.html"
 assert manifest["scope"] == "./"
 assert manifest["display"] == "standalone"
-assert "fetch(request)" in sw
+assert "fetch(request,{credentials:'omit'})" in sw, "Runtime shell repair must omit credentials"
 assert 'storage.mjs' in sw and 'history.mjs' in sw and 'unsaved.mjs' in sw and 'archive.mjs' in sw and 'archive-transfer.mjs' in sw and 'backup.mjs' in sw, "Offline cache must include required app modules"
 assert "import {inspectStorage,saveProject,inspectPrimaryRevision,storageEventConflicts,PRIMARY_KEY} from './storage.mjs'" in app
 assert "if(initial.state==='new')save(false);" in app, "Never overwrite corrupted storage at startup"
@@ -132,7 +132,9 @@ assert (root / 'test/sw-integrity.test.mjs').is_file()
 assert 'PATH_BY_PATHNAME' in sw
 assert "trustedShellAsset(hit,'./index.html')" in sw
 assert 'recoverShell(cache)' in sw and 'await completeShell(cache)' in sw
-assert 'await cache.addAll(FILES)' in sw, "Offline recovery must be all-or-nothing"
+assert 'await staged.addAll(publicShellRequests())' in sw, "Offline recovery must stage a complete anonymous shell"
+assert 'await cache.addAll(publicShellRequests())' in sw, "Offline installation must stage a complete anonymous shell"
+assert "credentials:'omit',cache:'reload'" in sw, "Precache must not send cookies"
 
 # Sprint 20: fail closed on partial/untrusted network shell assets, recover poisoned HTML only after a complete trust gate.
 assert 'response.status!==200' in sw

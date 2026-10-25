@@ -1,6 +1,13 @@
-const VERSION='klarpunkt-shell-v35';
+const VERSION='klarpunkt-shell-v36';
 const SHELL_PREFIX='klarpunkt-shell-v';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
+// Fetch public shell bytes without browser cookies or HTTP credentials.
+// Cache.addAll() otherwise defaults to same-origin credentials.
+function publicShellRequests(){
+ return FILES.map(path=>new Request(new URL(path,self.registration.scope),{
+  credentials:'omit',cache:'reload'
+ }));
+}
 // Cache only this app's immutable shell paths, never arbitrary data or URL variants.
 const STATIC_PATHS=new Set(FILES.map(path=>new URL(path,self.registration.scope).pathname));
 const PATH_BY_PATHNAME=new Map(FILES.map(path=>[new URL(path,self.registration.scope).pathname,path]));
@@ -104,7 +111,7 @@ async function recoverShell(cache){
   // Staging is the durable fence for a potentially mixed active cache.
   // Never declare a promotion successful before this fence is confirmed gone.
   if(!(await completeShell(staged))){
-   await staged.addAll(FILES);
+   await staged.addAll(publicShellRequests());
    if(!(await completeShell(staged)))throw new Error('Incomplete offline shell in recovery staging');
   }
   for(const path of FILES){
@@ -153,7 +160,7 @@ async function pruneOlderShells(){
 }
 self.addEventListener('install',event=>{
  event.waitUntil(caches.open(VERSION).then(async cache=>{
-  await cache.addAll(FILES);
+  await cache.addAll(publicShellRequests());
   if(!(await completeShell(cache)))throw new Error('Incomplete offline shell after precache');
   await self.skipWaiting();
  }));
@@ -177,7 +184,7 @@ async function promotedRuntimeAsset(cache,request,shellPath){
 }
 self.addEventListener('fetch',event=>{
  const request=event.request;
- if(request.method!=='GET')return;
+ if(request.method!=='GET'||request.credentials==='include')return;
  // Do not collapse authenticated or byte-range requests into a public
  // uncredentialed shell-cache response. Let the network handle them.
  if(request.cache==='no-store'||['authorization','cookie','range','if-range','if-none-match','if-modified-since','if-match','if-unmodified-since'].some(name=>request.headers?.has?.(name)))return;
@@ -216,7 +223,7 @@ self.addEventListener('fetch',event=>{
   if(trustedShellAsset(hit,shellPath))return hit;
   if(request.cache==='only-if-cached')return Response.error();
   const beforeFetch=shellEpoch;
-  const response=await fetch(request);
+  const response=await fetch(request,{credentials:'omit'});
   // A full recovery may start AND finish while the network request is
   // pending. Never write that pre-recovery response over the validated shell.
   if(recoveryInFlight||shellEpoch!==beforeFetch){
