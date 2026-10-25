@@ -53,10 +53,17 @@ test('runtime repair uses a canonical header-free request and cache key',async()
  assert.equal(request.headers.has('x-private-session'),false);
  assert.equal(request.headers.has('accept-language'),false);
  assert.equal(request.headers.has('accept'),false);
- assert.equal(request.referrer,'about:client');
+ assert.equal(request.referrer,'');
+ assert.equal(request.referrerPolicy,'no-referrer');
+ assert.equal(request.mode,'same-origin');
+ assert.equal(request.redirect,'error');
  assert.equal(h.writes.length,1);
  assert.equal(h.writes[0].url,scope+'app.mjs');
  assert.equal(h.writes[0].credentials,'omit');
+ assert.equal(h.writes[0].referrer,'');
+ assert.equal(h.writes[0].referrerPolicy,'no-referrer');
+ assert.equal(h.writes[0].mode,'same-origin');
+ assert.equal(h.writes[0].redirect,'error');
  assert.equal(h.writes[0].headers.has('x-private-session'),false);
  assert.equal(h.cacheEntries.size,1);
 });
@@ -98,4 +105,23 @@ test('explicit cache-only misses never issue a reconstructed network request',as
  assert.equal(result.networkError,true);
  assert.equal(h.network.length,0);
  assert.equal(h.writes.length,0);
+});
+
+test('incoming cross-site referrer and tracking headers cannot influence canonical repairs',async()=>{
+ const h=worker();
+ const incoming=new Request(scope+'app.mjs',{
+  headers:{'x-visitor-id':'sensitive','x-forwarded-for':'127.0.0.1'},
+  referrer:'https://outside.test/private?token=sensitive',
+  referrerPolicy:'unsafe-url'
+ });
+ const result=await h.dispatch(incoming);
+ assert.equal(result.ok,true);
+ const sent=h.network[0].request;
+ assert.equal(sent.referrer,'');
+ assert.equal(sent.referrerPolicy,'no-referrer');
+ assert.equal(sent.redirect,'error');
+ assert.equal(sent.mode,'same-origin');
+ assert.equal(sent.headers.has('x-visitor-id'),false);
+ assert.equal(sent.headers.has('x-forwarded-for'),false);
+ assert.equal(h.writes[0].referrerPolicy,'no-referrer');
 });

@@ -142,6 +142,8 @@ assert 'recoverShell(cache)' in sw and 'await completeShell(cache)' in sw
 assert 'await staged.addAll(publicShellRequests())' in sw, "Offline recovery must stage a complete anonymous shell"
 assert 'await cache.addAll(publicShellRequests())' in sw, "Offline installation must stage a complete anonymous shell"
 assert "credentials:'omit',cache:'reload'" in sw, "Precache must not send cookies"
+assert sw.count("redirect:'error',referrer:'',referrerPolicy:'no-referrer'") == 2, "Precache and runtime repair must not follow redirects or send referrers"
+assert sw.count("mode:'same-origin'") >= 2, "Anonymous shell requests must remain same-origin"
 
 # Sprint 20: fail closed on partial/untrusted network shell assets, recover poisoned HTML only after a complete trust gate.
 assert 'response.status!==200' in sw
