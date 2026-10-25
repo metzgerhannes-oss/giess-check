@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v26';
+const VERSION='klarpunkt-shell-v27';
 const SHELL_PREFIX='klarpunkt-shell-v';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Cache only this app's immutable shell paths, never arbitrary data or URL variants.
@@ -39,15 +39,29 @@ async function completeShell(cache){
  const matches=await Promise.all(FILES.map(path=>cache.match(path)));
  return matches.every((response,index)=>trustedShellAsset(response,FILES[index]));
 }
-// Recover an evicted shell as one complete batch. Cache.addAll is atomic in
-// browsers: a failed download cannot replace an existing partial/working set.
-// Navigation is served only after all required files pass the same trust gate.
+// Stage recovery in an isolated cache: a successful HTTP 200 may still have
+// the wrong MIME or origin. Never poison a partially healthy current release
+// before the entire replacement has passed the same trust gate as install.
+// Promotion cannot be atomic across CacheStorage entries: failed writes still
+// fail closed, and the preceding release is never modified.
+const RECOVERY_CACHE=VERSION+'-recovery';
 let recoveryInFlight=null;
 async function recoverShell(cache){
  if(!recoveryInFlight)recoveryInFlight=(async()=>{
-  await cache.addAll(FILES);
-  if(!(await completeShell(cache)))throw new Error('Incomplete offline shell after recovery');
-  return cache.match('./index.html');
+  const staged=await caches.open(RECOVERY_CACHE);
+  try{
+   await staged.addAll(FILES);
+   if(!(await completeShell(staged)))throw new Error('Incomplete offline shell in recovery staging');
+   for(const path of FILES){
+    const response=await staged.match(path);
+    await cache.put(path,response);
+   }
+   if(!(await completeShell(cache)))throw new Error('Incomplete offline shell after recovery');
+   return cache.match('./index.html');
+  }finally{
+   // A failed cleanup must not invalidate a verified, durable active shell.
+   try{await caches.delete(RECOVERY_CACHE);}catch{}
+  }
  })();
  const active=recoveryInFlight;
  try{return await active;}
