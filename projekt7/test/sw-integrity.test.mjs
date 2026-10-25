@@ -900,3 +900,11 @@ for(const [label,deleteFault] of [
   assert.equal(restarted.versions.has(oldShellVersion),true);
  });
 }
+
+test('credentialed browser navigation remains offline-capable with an anonymously precached shell',async()=>{
+ const sw=worker();
+ await sw.lifecycle('install');
+ const page=await sw.dispatch(sw.request('./index.html',{mode:'navigate',credentials:'include',cache:'only-if-cached'}));
+ assert.equal(page.headers.get('content-type'),'text/html');
+ assert.equal(sw.networkCalls,0,'Offline navigation must not require a credentialed network fetch');
+});

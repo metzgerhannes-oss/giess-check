@@ -184,7 +184,10 @@ async function promotedRuntimeAsset(cache,request,shellPath){
 }
 self.addEventListener('fetch',event=>{
  const request=event.request;
- if(request.method!=='GET'||request.credentials==='include')return;
+ // Top-level navigations normally have credentials='include'; they must
+ // remain offline-capable, using the anonymously precached public shell.
+ // Explicitly credentialed subresources must not be served from public cache.
+ if(request.method!=='GET'||(request.mode!=='navigate'&&request.credentials==='include'))return;
  // Do not collapse authenticated or byte-range requests into a public
  // uncredentialed shell-cache response. Let the network handle them.
  if(request.cache==='no-store'||['authorization','cookie','range','if-range','if-none-match','if-modified-since','if-match','if-unmodified-since'].some(name=>request.headers?.has?.(name)))return;

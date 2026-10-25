@@ -95,10 +95,9 @@ test('ordinary public asset request still repairs and persists cache',async()=>{
  assert.equal(h.writes,1);
  assert.equal(h.entries.size,1);
 });
-test('explicitly credentialed shell requests bypass the public cache',()=>{
+test('explicitly credentialed subresource requests bypass the public cache',()=>{
  const h=harness();
  assert.equal(h.dispatch({...h.request('./app.mjs'),credentials:'include'}),undefined);
- assert.equal(h.dispatch({...h.request('./index.html'),mode:'navigate',credentials:'include'}),undefined);
  assert.equal(h.fetches,0);
  assert.equal(h.writes,0);
 });
