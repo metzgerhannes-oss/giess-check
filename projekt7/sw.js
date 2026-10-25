@@ -1,11 +1,14 @@
 const VERSION='klarpunkt-shell-v44';
 const SHELL_PREFIX='klarpunkt-shell-v';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
-// Fetch public shell bytes without browser cookies or HTTP credentials.
+// Fetch public shell bytes without browser cookies, referrers, cross-origin
+// redirects or HTTP credentials. Both install and runtime repair must use
+// identical anonymous, same-origin request policy.
 // Cache.addAll() otherwise defaults to same-origin credentials.
 function publicShellRequests(){
  return FILES.map(path=>new Request(new URL(path,self.registration.scope),{
-  credentials:'omit',cache:'reload'
+  credentials:'omit',cache:'reload',mode:'same-origin',
+   redirect:'error',referrer:'',referrerPolicy:'no-referrer'
  }));
 }
 // Cache only this app's immutable shell paths, never arbitrary data or URL variants.
@@ -269,7 +272,8 @@ self.addEventListener('fetch',event=>{
   // response and persist it in the shared offline shell. Reconstruct a fresh,
   // canonical request with no inherited headers, referrer or client tokens.
   const publicRequest=new Request(new URL(shellPath,self.registration.scope),{
-   credentials:'omit',cache:'reload'
+   credentials:'omit',cache:'reload',mode:'same-origin',
+   redirect:'error',referrer:'',referrerPolicy:'no-referrer'
   });
   const response=await fetch(publicRequest,{credentials:'omit'});
   // A full recovery may start AND finish while the network request is

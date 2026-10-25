@@ -46,6 +46,10 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
       assert.ok(path,'Only canonical shell URLs may be precached');
       assert.equal(resource.credentials,'omit','Precache must never send cookies');
       assert.equal(resource.cache,'reload','Precache must fetch current shell bytes');
+      assert.equal(resource.mode,'same-origin','Precache must not follow cross-origin requests');
+      assert.equal(resource.redirect,'error','Precache must reject redirects');
+      assert.equal(resource.referrer,'','Precache must not inherit the page referrer');
+      assert.equal(resource.referrerPolicy,'no-referrer','Precache must never transmit a referrer');
       if(path!==missing){
        const mime=path==='./'||path.endsWith('.html')?'text/html':
          path.endsWith('.mjs')?'text/javascript':path.endsWith('.css')?'text/css':
