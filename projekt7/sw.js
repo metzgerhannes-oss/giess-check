@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v37';
+const VERSION='klarpunkt-shell-v38';
 const SHELL_PREFIX='klarpunkt-shell-v';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Fetch public shell bytes without browser cookies or HTTP credentials.
@@ -226,7 +226,14 @@ self.addEventListener('fetch',event=>{
   if(trustedShellAsset(hit,shellPath))return hit;
   if(request.cache==='only-if-cached')return Response.error();
   const beforeFetch=shellEpoch;
-  const response=await fetch(request,{credentials:'omit'});
+  // A page-controlled Request can carry arbitrary custom headers. Even with
+  // credentials:'omit', forwarding those headers could return a personalized
+  // response and persist it in the shared offline shell. Reconstruct a fresh,
+  // canonical request with no inherited headers, referrer or client tokens.
+  const publicRequest=new Request(new URL(shellPath,self.registration.scope),{
+   credentials:'omit',cache:'reload'
+  });
+  const response=await fetch(publicRequest,{credentials:'omit'});
   // A full recovery may start AND finish while the network request is
   // pending. Never write that pre-recovery response over the validated shell.
   if(recoveryInFlight||shellEpoch!==beforeFetch){
@@ -237,7 +244,7 @@ self.addEventListener('fetch',event=>{
   // Track and await each best-effort write: whole-shell recovery waits for
   // repairs already in flight, but quota failure still permits online use.
   let writing;
-  try{writing=cache.put(request,response.clone());}
+  try{writing=cache.put(publicRequest,response.clone());}
   catch{
    return recoveryInFlight||shellEpoch!==beforeFetch
     ?promotedRuntimeAsset(cache,request,shellPath):response;
