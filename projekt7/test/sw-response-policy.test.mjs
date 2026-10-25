@@ -10,7 +10,7 @@ function harness(networkHeaders={}){
  const entries=new Map();
  let writes=0,fetches=0,opens=[];
  const self={registration:{scope},addEventListener:(name,handler)=>handlers.set(name,handler)};
- const caches={open:async name=>{opens.push(name);return {
+ const caches={keys:async()=>[],open:async name=>{opens.push(name);return {
   match:async request=>entries.get(typeof request==='string'?new URL(request,scope).href:request.url),
   put:async(request,response)=>{writes++;entries.set(request.url,response);}
  };}};

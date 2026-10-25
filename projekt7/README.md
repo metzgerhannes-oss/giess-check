@@ -138,3 +138,6 @@ abgewiesen, um nutzer- oder sitzungsspezifische Cache-Varianten nicht
 persistieren zu lassen. Node-Fault-Injection prüft späte Schreibfehler,
 unvollständige Promotionen und HTTP-Header-Varianten. CacheStorage bleibt
 nicht transaktional; echte iOS-/Safari-Hardwaretests stehen weiter aus.
+
+## Sprint 39: Dauerhafte Wiederherstellungs-Sperre über Worker-Neustarts
+Ein verbliebener temporärer Offline-Cache signalisiert jetzt auch nach einem Neustart eine möglicherweise unterbrochene Mehrdatei-Übernahme. Vollständig erscheinende aktive Dateien werden nicht allein anhand gültiger HTTP-Metadaten freigegeben, solange die Übernahme nicht abschließend bereinigt ist. Statische Anfragen scheitern dann geschlossen; eine reguläre Navigation kann einen vollständig validierten Zwischenspeicher offline erneut übernehmen. Auch ein ungültiger oder nicht erneut herunterladbarer Zwischenspeicher bleibt bei Fehlschlag als Sperrhinweis bestehen. Nach erfolgreicher Übernahme wird er entfernt. Neue Fault-Injection-Regressionen decken spät gemeldete letzte Schreibfehler, Neustarts und ungültige Zwischenstände ab. Browserseitige CacheStorage-Löschung/Eviction und fehlende atomare Mehrdatei-Transaktionen bleiben technische Grenzen.

@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v32';
+const VERSION='klarpunkt-shell-v33';
 const SHELL_PREFIX='klarpunkt-shell-v';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Cache only this app's immutable shell paths, never arbitrary data or URL variants.
@@ -51,6 +51,12 @@ async function completeShell(cache){
 // Promotion cannot be atomic across CacheStorage entries: failed writes still
 // fail closed, and the preceding release is never modified.
 const RECOVERY_CACHE=VERSION+'-recovery';
+// A leftover staging cache is a durable warning that promotion may have
+// stopped after writing some (or even all) active entries. MIME checks alone
+// cannot distinguish a mixed-version shell after a worker restart.
+async function pendingPromotion(){
+ return (await caches.keys()).includes(RECOVERY_CACHE);
+}
 let recoveryInFlight=null;
 // Increment before and after every recovery. A delayed cache read or network
 // response must never be delivered across a whole-shell promotion.
@@ -65,10 +71,17 @@ async function stableCacheHit(cache,path,{requireComplete=false,allowFailedRecov
   if(pending)await pending;
   const epoch=shellEpoch;
   const hit=await cache.match(path);
+  const pendingStage=await pendingPromotion();
   const complete=!requireComplete||(hit&&await completeShell(cache));
   // CacheStorage reads are async: a promotion can begin and finish while a
   // match is pending. Discard the old response and retry against the new epoch.
   if(recoveryInFlight||epoch!==shellEpoch)continue;
+  // Never serve a possibly mixed shell merely because every URL exists.
+  // Navigations may reconcile the durable stage; static reads fail closed.
+  if(pendingStage){
+   if(requireComplete&&allowFailedRecovery)return null;
+   throw new Error('Unfinished offline shell promotion');
+  }
   if(recoveryFailed&&!allowFailedRecovery)throw new Error('Offline recovery failed');
   // A failed promotion may have durably written its final entry before the
   // browser reported an error. Only a complete, epoch-stable navigation check
@@ -84,7 +97,9 @@ async function recoverShell(cache){
   recoveryInFlight=(async()=>{
    try{
   await Promise.allSettled([...runtimeWrites]);
-  if(await completeShell(cache)){recoveryFailed=false;return await cache.match('./index.html');}
+  if(!(await pendingPromotion())&&await completeShell(cache)){
+   recoveryFailed=false;return await cache.match('./index.html');
+  }
   const staged=await caches.open(RECOVERY_CACHE);
   let verifiedStage=false, promoted=false;
   try{
@@ -107,10 +122,12 @@ async function recoverShell(cache){
    recoveryFailed=false;
    return page;
   }finally{
-   // Keep a verified staging shell when promotion fails: a subsequent worker
-   // can finish offline. Remove invalid staging and completed promotions.
-   // A failed cleanup must not invalidate a verified active shell.
-   if(promoted||!verifiedStage){
+   // Retain staging on EVERY failure, including invalid/redownload-failed
+   // staging: after a restart we cannot prove whether an earlier worker
+   // already wrote a mixed active shell. A future navigation must reconcile
+   // the stage rather than trusting a metadata-complete active cache.
+   // Only a fully promoted shell permits removal of this durable fence.
+   if(promoted){
     try{await caches.delete(RECOVERY_CACHE);}catch{}
    }
   }
@@ -153,7 +170,7 @@ self.addEventListener('install',event=>{
 self.addEventListener('activate',event=>{
  event.waitUntil(caches.open(VERSION).then(async cache=>{
   // Never delete previous working offline versions if the new shell was evicted.
-  if(!(await completeShell(cache)))throw new Error('Incomplete offline shell at activation');
+  if(await pendingPromotion()||!(await completeShell(cache)))throw new Error('Incomplete offline shell at activation (or unreconciled promotion)');
   await pruneOlderShells();
   await self.clients.claim();
  }));
