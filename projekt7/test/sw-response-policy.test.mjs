@@ -8,7 +8,7 @@ const scope='https://example.test/giess-check/projekt7/';
 function harness(networkHeaders={}){
  const handlers=new Map();
  const entries=new Map();
- let writes=0,fetches=0,opens=[];
+ let writes=0,fetches=0,opens=[],lastFetchOptions=null;
  const self={registration:{scope},addEventListener:(name,handler)=>handlers.set(name,handler)};
  const caches={keys:async()=>[],open:async name=>{opens.push(name);return {
   match:async request=>entries.get(typeof request==='string'?new URL(request,scope).href:request.url),
@@ -19,11 +19,12 @@ function harness(networkHeaders={}){
   headers:{get:name=>Object.hasOwn(headers,name)?headers[name]:null},
   clone(){return this;}
  });
- const fetch=async request=>{
+ const fetch=async (request,options)=>{
   fetches++;
+  lastFetchOptions=options;
   return response(request.url,{'content-type':'text/javascript',...networkHeaders});
  };
- const sandbox={self,caches,fetch,URL,Set,Response:{error:()=>({networkError:true})}};
+ const sandbox={self,caches,fetch,URL,Request,Set,Response:{error:()=>({networkError:true})}};
  runInNewContext(source+'\n;globalThis.__trusted=trustedShellAsset;',sandbox);
  const dispatch=request=>{
   let reply;
@@ -31,11 +32,12 @@ function harness(networkHeaders={}){
   return reply;
  };
  const request=(path,headerNames=[])=>({
-  url:new URL(path,scope).href,method:'GET',mode:'cors',
+  url:new URL(path,scope).href,method:'GET',mode:'cors',credentials:'same-origin',
   headers:{has:name=>headerNames.includes(name)}
  });
  return {trusted:sandbox.__trusted,response,dispatch,request,entries,opens,
-  get writes(){return writes;},get fetches(){return fetches;}};
+  get writes(){return writes;},get fetches(){return fetches;},
+  get lastFetchOptions(){return lastFetchOptions;}};
 }
 test('normal immutable public shell responses remain cacheable',()=>{
  const h=harness();
@@ -89,8 +91,15 @@ test('ordinary public asset request still repairs and persists cache',async()=>{
  const result=await h.dispatch(h.request('./app.mjs'));
  assert.equal(result.ok,true);
  assert.equal(h.fetches,1);
+ assert.equal(h.lastFetchOptions?.credentials,'omit','Runtime repair must be anonymous');
  assert.equal(h.writes,1);
  assert.equal(h.entries.size,1);
+});
+test('explicitly credentialed subresource requests bypass the public cache',()=>{
+ const h=harness();
+ assert.equal(h.dispatch({...h.request('./app.mjs'),credentials:'include'}),undefined);
+ assert.equal(h.fetches,0);
+ assert.equal(h.writes,0);
 });
 
 test('navigation with query parameters never substitutes the public cached shell',()=>{

@@ -20,12 +20,12 @@ function createWorker(){
  const cache={
   match:async request=>entries.get(typeof request==='string'?new URL(request,scope).href:request.url),
   put:async(request,response)=>{entries.set(typeof request==='string'?new URL(request,scope).href:request.url,response);},
-  addAll:async files=>{for(const file of files)entries.set(new URL(file,scope).href,{cached:true});}
+  addAll:async files=>{for(const file of files)entries.set(typeof file==='string'?new URL(file,scope).href:file.url,{cached:true});}
  };
  const caches={open:async()=>cache,keys:async()=>[],delete:async()=>true};
  const self={location:{origin:new URL(scope).origin},registration:{scope},addEventListener:(name,fn)=>handlers.set(name,fn),skipWaiting:async()=>{},clients:{claim:async()=>{}}};
  const fetch=async()=>{networkCalls++;return {ok:true,clone(){return this;}};};
- runInNewContext(source,{self,caches,fetch,URL,Set,Response:{error:()=>({networkError:true})}});
+ runInNewContext(source,{self,caches,fetch,URL,Request,Set,Response:{error:()=>({networkError:true})}});
  const request=(url,{method='GET',mode='cors'}={})=>({url,method,mode});
  const dispatch=req=>{
   let response;

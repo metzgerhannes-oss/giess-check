@@ -39,7 +39,11 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
      addAllCalls++;
      // Model atomic Cache.addAll: stage all entries before committing.
      const staged=new Map(entries);
-     for(const path of files){
+     for(const resource of files){
+      const path=shell.find(candidate=>keyOf(candidate)===keyOf(resource));
+      assert.ok(path,'Only canonical shell URLs may be precached');
+      assert.equal(resource.credentials,'omit','Precache must never send cookies');
+      assert.equal(resource.cache,'reload','Precache must fetch current shell bytes');
       if(path!==missing){
        const mime=path==='./'||path.endsWith('.html')?'text/html':
          path.endsWith('.mjs')?'text/javascript':path.endsWith('.css')?'text/css':
@@ -95,7 +99,7 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
    headers:{get:name=>name==='content-type'?mime:null},clone(){return this;}
   };
  };
- runInNewContext(source,{self,caches,fetch,URL,Set,Response:{error:()=>({networkError:true})}});
+ runInNewContext(source,{self,caches,fetch,URL,Request,Set,Response:{error:()=>({networkError:true})}});
  const lifecycle=type=>{
   let promise;
   handlers.get(type)({waitUntil:p=>{promise=p;}});
@@ -896,3 +900,11 @@ for(const [label,deleteFault] of [
   assert.equal(restarted.versions.has(oldShellVersion),true);
  });
 }
+
+test('credentialed browser navigation remains offline-capable with an anonymously precached shell',async()=>{
+ const sw=worker();
+ await sw.lifecycle('install');
+ const page=await sw.dispatch(sw.request('./index.html',{mode:'navigate',credentials:'include',cache:'only-if-cached'}));
+ assert.equal(page.headers.get('content-type'),'text/html');
+ assert.equal(sw.networkCalls,0,'Offline navigation must not require a credentialed network fetch');
+});
