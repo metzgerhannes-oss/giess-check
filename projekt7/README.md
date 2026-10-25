@@ -126,3 +126,15 @@ Die Offline-Shell nutzt einen monotonen Revisionszähler vor und nach jeder Wied
 
 ## Sprint 37: Cache-only-Anfragen und öffentliche Antwortintegrität
 Ein expliziter Browser-Request mit `cache: 'only-if-cached'` darf weder bei fehlenden Modulen noch bei unvollständiger Navigation einen Netzabruf oder eine Shell-Wiederherstellung starten. Vertrauenswürdige vollständige Cache-Treffer bleiben verwendbar; ungültige Cache-Einträge schlagen geschlossen fehl. Die Offline-Vertrauensprüfung verwirft außerdem Antworten mit `Set-Cookie`/`Set-Cookie2` sowie jeglichem `Content-Range`, auch bei irreführendem HTTP 200. Diese Schutzregeln gelten gleichermaßen für Installation, vorhandene Cache-Einträge und Laufzeit-Reparaturen. Die Shell-Version wird angehoben, um Altbestände erneut zu validieren. Browser-CacheStorage bleibt nicht transaktional; eine physische Safari-Abnahme ist weiterhin offen.
+
+## Sprint 38: Wiederanlauf nach spät gemeldeten Cache-Fehlern
+Eine bereits vollständig gespeicherte Offline-Shell kann bei einer spät gemeldeten
+Speicherfehlermeldung zunächst vorsorglich blockiert bleiben. Eine erneute
+Navigation prüft nun die **gesamte** Shell und den unveränderten
+Wiederherstellungs-Epoch; nur bei vollständiger Integrität wird die Sperre
+aufgehoben. Einzelne Cache-Treffer dürfen sie nicht aufheben. Zusätzlich
+werden unbekannte HTTP-`Vary`-Dimensionen für öffentliche Offline-Dateien
+abgewiesen, um nutzer- oder sitzungsspezifische Cache-Varianten nicht
+persistieren zu lassen. Node-Fault-Injection prüft späte Schreibfehler,
+unvollständige Promotionen und HTTP-Header-Varianten. CacheStorage bleibt
+nicht transaktional; echte iOS-/Safari-Hardwaretests stehen weiter aus.

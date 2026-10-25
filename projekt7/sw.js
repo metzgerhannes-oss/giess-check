@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v31';
+const VERSION='klarpunkt-shell-v32';
 const SHELL_PREFIX='klarpunkt-shell-v';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Cache only this app's immutable shell paths, never arbitrary data or URL variants.
@@ -25,7 +25,9 @@ function trustedShellAsset(response,path){
  // Never persist session-setting responses in a public offline shell.
  if(headers?.get('set-cookie')||headers?.get('set-cookie2'))return false;
  const vary=headers?.get('vary')||'';
- if(vary.split(',').some(value=>/^(?:\*|cookie|authorization|proxy-authorization|origin)$/i.test(value.trim())))return false;
+ // Only harmless content-negotiation dimensions are safe in a public offline
+ // shell. Unknown Vary keys can conceal per-session or authorization variants.
+ if(vary&&vary.split(',').some(value=>!/^(?:accept|accept-encoding|accept-language)$/i.test(value.trim())))return false;
  // A full HTTP 200 asset must not carry any range metadata, even a
  // non-byte unit or malformed range that the browser would otherwise accept.
  if((headers?.get('content-range')||'').trim())return false;
@@ -68,6 +70,10 @@ async function stableCacheHit(cache,path,{requireComplete=false,allowFailedRecov
   // match is pending. Discard the old response and retry against the new epoch.
   if(recoveryInFlight||epoch!==shellEpoch)continue;
   if(recoveryFailed&&!allowFailedRecovery)throw new Error('Offline recovery failed');
+  // A failed promotion may have durably written its final entry before the
+  // browser reported an error. Only a complete, epoch-stable navigation check
+  // can clear the sticky failure; individual static hits cannot prove safety.
+  if(recoveryFailed&&allowFailedRecovery&&requireComplete&&complete)recoveryFailed=false;
   return complete?hit:null;
  }
  throw new Error('Offline shell changed during cache read');
