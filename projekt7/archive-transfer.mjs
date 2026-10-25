@@ -78,6 +78,12 @@ export async function importArchiveBackupAsync(storage,readText,expectedRaw,appr
   throw error;
  }
  const parsed=parseArchiveBackup(await readText());
- if(!approve(parsed.items.length))return null;
+ // A slow file read may outlive the archive revision shown to the user.
+ // Refuse a stale import before asking for confirmation at all.
+ assertArchiveVersion(storage,expectedRaw);
+ // Confirmation may be asynchronous (custom dialogs, accessibility flows).
+ // Never interpret a pending Promise as approval; recheck the same revision
+ // inside importArchiveBackup after confirmation settles.
+ if(!(await approve(parsed.items.length)))return null;
  return importArchiveBackup(storage,parsed,expectedRaw);
 }
