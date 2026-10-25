@@ -9,13 +9,14 @@ assert.ok(shellVersion,'Offline shell version must be declared');
 const oldShellVersion='klarpunkt-shell-v'+(Number(shellVersion.split('-v').at(-1))-1);
 const scope='https://example.test/giess-check/projekt7/';
 const shell=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
-function worker({missing=null,failPrecache=false,networkResponse=null,failPut=false,badPrecache=null,holdPut=false,failDelete=false}={}){
- const handlers=new Map(),versions=new Map(),deleted=[];
+function worker({missing=null,failPrecache=false,networkResponse=null,failPut=false,failPutAt=null,badPrecache=null,holdPut=false,failDelete=false,sharedVersions=null}={}){
+ const handlers=new Map(),versions=sharedVersions??new Map(),deleted=[];
  const current=shellVersion,old=oldShellVersion;
  const oldEntries=new Map(shell.map(path=>[new URL(path,scope).href,{old:true}]));
- versions.set(old,oldEntries);versions.set('unrelated-app',new Map());
+ if(!versions.has(old))versions.set(old,oldEntries);
+ if(!versions.has('unrelated-app'))versions.set('unrelated-app',new Map());
  let waiting=0,claimed=0,networkCalls=0,putCalls=0,addAllCalls=0;
- let precacheShouldFail=failPrecache,precacheFault=badPrecache;
+ let precacheShouldFail=failPrecache,precacheFault=badPrecache,putShouldFail=failPut;
  let releasePut;
  const putBarrier=holdPut?new Promise(resolve=>{releasePut=resolve;}):null;
  const keyOf=req=>new URL(typeof req==='string'?req:req.url,scope).href;
@@ -49,7 +50,7 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
     put:async(req,response)=>{
      putCalls++;
      if(putBarrier)await putBarrier;
-     if(failPut)throw Error('QuotaExceededError');
+     if(putShouldFail||(failPutAt!==null&&putCalls===failPutAt))throw Error('QuotaExceededError');
      entries.set(keyOf(req),response);
     }
    };
@@ -88,6 +89,7 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
  return {
   lifecycle,request,dispatch,versions,deleted,
   setPrecacheFailure:value=>{precacheShouldFail=value;},
+  setPutFailure:value=>{putShouldFail=value;},
   setBadPrecache:value=>{precacheFault=value;},
   releasePut:()=>releasePut?.(),
   get waiting(){return waiting;},get claimed(){return claimed;},
@@ -456,7 +458,7 @@ test('quota failure during staged promotion fails closed without evicting old re
  const before=[...entries.entries()];
  assert.deepEqual(await sw.dispatch(sw.request('./index.html',{mode:'navigate'})),{networkError:true});
  assert.deepEqual([...entries.entries()],before,'Failed first promotion write preserves active entries');
- assert.equal(sw.versions.has(shellVersion+'-recovery'),false);
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),true,'Verified staging must survive a failed promotion');
  assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
 });
 
@@ -539,4 +541,67 @@ test('activation prunes orphaned staging caches but retains previous-worker stag
  for(const key of [previous,future,'unrelated-app-recovery',oldShellVersion]){
   assert.equal(sw.versions.has(key),true,key+' must be retained');
  }
+});
+
+test('validated staging survives quota failure and retries without a network download',async()=>{
+ const sw=worker({failPut:true});
+ await sw.lifecycle('install');
+ sw.versions.get(shellVersion).delete(new URL('./core.mjs',scope).href);
+ const req=sw.request('./index.html',{mode:'navigate'});
+ assert.deepEqual(await sw.dispatch(req),{networkError:true});
+ assert.equal(sw.versions.get(shellVersion+'-recovery').size,shell.length);
+ sw.setPutFailure(false);
+ sw.setPrecacheFailure(true);
+ const page=await sw.dispatch(req);
+ assert.equal(page.headers.get('content-type'),'text/html');
+ assert.equal(sw.addAllCalls,2,'Retry must reuse validated staging without downloading');
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),false);
+ assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
+});
+
+test('interrupted mid-promotion can finish offline after a worker restart',async()=>{
+ const sw=worker({failPutAt:5});
+ await sw.lifecycle('install');
+ sw.versions.get(shellVersion).delete(new URL('./core.mjs',scope).href);
+ const req=sw.request('./index.html',{mode:'navigate'});
+ assert.deepEqual(await sw.dispatch(req),{networkError:true});
+ assert.equal(sw.putCalls,5);
+ assert.equal(sw.versions.get(shellVersion+'-recovery').size,shell.length);
+ const restarted=worker({sharedVersions:sw.versions,failPrecache:true});
+ const page=await restarted.dispatch(req);
+ assert.equal(page.headers.get('content-type'),'text/html');
+ assert.equal(restarted.addAllCalls,0,'A new worker must not need the network');
+ assert.equal(restarted.versions.has(shellVersion+'-recovery'),false);
+ assert.equal(restarted.versions.get(shellVersion).size,shell.length);
+ assert.equal(restarted.versions.get(oldShellVersion).size,shell.length);
+});
+
+test('poisoned leftover staging is revalidated and replaced before promotion',async()=>{
+ const sw=worker({failPut:true});
+ await sw.lifecycle('install');
+ sw.versions.get(shellVersion).delete(new URL('./core.mjs',scope).href);
+ const req=sw.request('./index.html',{mode:'navigate'});
+ assert.deepEqual(await sw.dispatch(req),{networkError:true});
+ const staged=sw.versions.get(shellVersion+'-recovery');
+ staged.get(new URL('./app.mjs',scope).href).headers.get=()=> 'text/html';
+ sw.setPutFailure(false);
+ const page=await sw.dispatch(req);
+ assert.equal(page.headers.get('content-type'),'text/html');
+ assert.equal(sw.addAllCalls,3,'Poisoned staging must be replaced with a validated batch');
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),false);
+});
+
+test('failed re-download of poisoned staging removes it without modifying old release',async()=>{
+ const sw=worker({failPut:true});
+ await sw.lifecycle('install');
+ sw.versions.get(shellVersion).delete(new URL('./core.mjs',scope).href);
+ const req=sw.request('./index.html',{mode:'navigate'});
+ assert.deepEqual(await sw.dispatch(req),{networkError:true});
+ const staged=sw.versions.get(shellVersion+'-recovery');
+ staged.get(new URL('./app.mjs',scope).href).headers.get=()=> 'text/html';
+ sw.setPutFailure(false);
+ sw.setPrecacheFailure(true);
+ assert.deepEqual(await sw.dispatch(req),{networkError:true});
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),false);
+ assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
 });

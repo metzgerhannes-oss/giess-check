@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v28';
+const VERSION='klarpunkt-shell-v29';
 const SHELL_PREFIX='klarpunkt-shell-v';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Cache only this app's immutable shell paths, never arbitrary data or URL variants.
@@ -54,18 +54,31 @@ async function recoverShell(cache){
   await Promise.allSettled([...runtimeWrites]);
   if(await completeShell(cache))return cache.match('./index.html');
   const staged=await caches.open(RECOVERY_CACHE);
+  let verifiedStage=false, promoted=false;
   try{
-   await staged.addAll(FILES);
-   if(!(await completeShell(staged)))throw new Error('Incomplete offline shell in recovery staging');
+   // A previous worker may have crashed or hit quota halfway through
+   // promotion. Reuse only a complete, validated staging shell: this permits
+   // an offline retry after a restart without trusting partial active entries.
+   verifiedStage=await completeShell(staged);
+   if(!verifiedStage){
+    await staged.addAll(FILES);
+    verifiedStage=await completeShell(staged);
+    if(!verifiedStage)throw new Error('Incomplete offline shell in recovery staging');
+   }
    for(const path of FILES){
     const response=await staged.match(path);
     await cache.put(path,response);
    }
    if(!(await completeShell(cache)))throw new Error('Incomplete offline shell after recovery');
+   promoted=true;
    return cache.match('./index.html');
   }finally{
-   // A failed cleanup must not invalidate a verified, durable active shell.
-   try{await caches.delete(RECOVERY_CACHE);}catch{}
+   // Keep a verified staging shell when promotion fails: a subsequent worker
+   // can finish offline. Remove invalid staging and completed promotions.
+   // A failed cleanup must not invalidate a verified active shell.
+   if(promoted||!verifiedStage){
+    try{await caches.delete(RECOVERY_CACHE);}catch{}
+   }
   }
  })();
  const active=recoveryInFlight;
