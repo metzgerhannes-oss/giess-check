@@ -161,3 +161,33 @@ test('cache-only navigation refuses incomplete shell without starting recovery',
  assert.equal(h.opens.length,1,'No staging cache may be opened for a cache-only request');
  assert.ok(!h.opens.some(name=>name.endsWith('-recovery')));
 });
+
+for(const [label,vary] of [
+ ['unknown session dimension','X-Session-Token'],
+ ['custom authorization dimension','X-Auth, Accept-Encoding'],
+ ['malformed empty dimension','Accept-Encoding,,Accept-Language'],
+ ['unrecognized user agent dimension','User-Agent']
+]){
+ test('public shell trust rejects '+label,()=>{
+  const h=harness();
+  assert.equal(h.trusted(h.response('./app.mjs',{
+   'content-type':'text/javascript','vary':vary
+  }),'./app.mjs'),false);
+ });
+ test('runtime repair fails closed for '+label,async()=>{
+  const h=harness({'vary':vary});
+  const result=await h.dispatch(h.request('./app.mjs'));
+  assert.equal(result.networkError,true);
+  assert.equal(h.fetches,1);
+  assert.equal(h.writes,0);
+ });
+}
+test('known public negotiation dimensions remain allowed',()=>{
+ const h=harness();
+ for(const vary of ['Accept','Accept-Encoding','Accept-Language',
+  'Accept-Encoding, Accept-Language']){
+  assert.equal(h.trusted(h.response('./app.mjs',{
+   'content-type':'text/javascript','vary':vary
+  }),'./app.mjs'),true,vary);
+ }
+});

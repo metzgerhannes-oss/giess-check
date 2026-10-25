@@ -9,7 +9,7 @@ assert.ok(shellVersion,'Offline shell version must be declared');
 const oldShellVersion='klarpunkt-shell-v'+(Number(shellVersion.split('-v').at(-1))-1);
 const scope='https://example.test/giess-check/projekt7/';
 const shell=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
-function worker({missing=null,failPrecache=false,networkResponse=null,failPut=false,failPutAt=null,badPrecache=null,holdPut=false,failDelete=false,sharedVersions=null}={}){
+function worker({missing=null,failPrecache=false,networkResponse=null,failPut=false,failPutAt=null,badPrecache=null,holdPut=false,failDelete=false,sharedVersions=null,failPutAfterWriteAt=null}={}){
  const handlers=new Map(),versions=sharedVersions??new Map(),deleted=[];
  const current=shellVersion,old=oldShellVersion;
  const oldEntries=new Map(shell.map(path=>[new URL(path,scope).href,{old:true}]));
@@ -60,6 +60,9 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
      if(putBarrier)await putBarrier;
      if(putShouldFail||(failPutAt!==null&&putCalls===failPutAt))throw Error('QuotaExceededError');
      entries.set(keyOf(req),response);
+     // Simulate a storage backend that persists bytes but reports a late
+     // failure: successful persistence is not the same as a resolved Promise.
+     if(failPutAfterWriteAt!==null&&putCalls===failPutAfterWriteAt)throw Error('Late storage failure');
     }
    };
   },
@@ -191,7 +194,8 @@ test('precache rejects wrong MIME, redirects, foreign URLs and opaque responses 
   {path:'./app.mjs',headers:{'cache-control':'private, max-age=60'}},
   {path:'./style.css',headers:{'cache-control':'no-cache'}},
   {path:'./core.mjs',headers:{vary:'Cookie'}},
-  {path:'./icon.svg',headers:{vary:'Authorization'}}
+  {path:'./icon.svg',headers:{vary:'Authorization'}},
+  {path:'./app.mjs',headers:{vary:'X-Session-Token'}}
  ];
  for(const badPrecache of faults){
   const sw=worker({badPrecache});
@@ -715,5 +719,42 @@ test('delayed network repair fails closed after a failed shell promotion',async(
  sw.releaseFetch();
  assert.deepEqual(await repairing,{networkError:true});
  assert.equal(sw.putCalls,writes,'No stale write after failed recovery');
+ assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
+});
+
+test('late final promotion failure remains closed until a full shell is revalidated',async()=>{
+ const sw=worker({failPutAfterWriteAt:shell.length});
+ await sw.lifecycle('install');
+ const entries=sw.versions.get(shellVersion);
+ entries.delete(new URL('./core.mjs',scope).href);
+ const navigate=sw.request('./index.html',{mode:'navigate'});
+ assert.deepEqual(await sw.dispatch(navigate),{networkError:true});
+ assert.equal(sw.putCalls,shell.length);
+ assert.equal(entries.size,shell.length,'Late error happened after all entries were durable');
+ assert.deepEqual(await sw.dispatch(sw.request('./app.mjs')),{networkError:true},
+  'One trusted asset cannot clear a previous failed recovery');
+ const page=await sw.dispatch(navigate);
+ assert.equal(page.headers.get('content-type'),'text/html');
+ const [script,css]=await Promise.all([
+  sw.dispatch(sw.request('./app.mjs')),sw.dispatch(sw.request('./style.css'))
+ ]);
+ assert.equal(script.headers.get('content-type'),'text/javascript');
+ assert.equal(css.headers.get('content-type'),'text/css');
+ assert.equal(sw.addAllCalls,2,'Complete durable shell must not be downloaded again');
+ assert.equal(sw.networkCalls,0);
+ assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
+});
+
+test('incomplete failed promotion never becomes trusted through static cache hits',async()=>{
+ const sw=worker({failPutAt:5});
+ await sw.lifecycle('install');
+ sw.versions.get(shellVersion).delete(new URL('./core.mjs',scope).href);
+ const navigate=sw.request('./index.html',{mode:'navigate'});
+ assert.deepEqual(await sw.dispatch(navigate),{networkError:true});
+ for(const path of ['./app.mjs','./style.css','./index.html']){
+  const req=sw.request(path,{mode:path.endsWith('.html')?'navigate':'cors',cache:'only-if-cached'});
+  assert.deepEqual(await sw.dispatch(req),{networkError:true},path);
+ }
+ assert.equal(sw.networkCalls,0);
  assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
 });
