@@ -11,7 +11,7 @@ const mime=path=>path==='./'||path.endsWith('.html')?'text/html':
  path.endsWith('.svg')?'image/svg+xml':path.endsWith('.png')?'image/png':'application/manifest+json';
 const trusted=(path,extra={})=>({
  ok:true,status:200,redirected:false,type:'basic',url:new URL(path,scope).href,
- headers:{get:()=>mime(path)},
+ headers:{get:name=>name==='content-type'?mime(path):null},
  cached:true,...extra
 });
 function createWorker(){
