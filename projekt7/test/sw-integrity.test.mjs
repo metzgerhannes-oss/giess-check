@@ -9,7 +9,7 @@ assert.ok(shellVersion,'Offline shell version must be declared');
 const oldShellVersion='klarpunkt-shell-v'+(Number(shellVersion.split('-v').at(-1))-1);
 const scope='https://example.test/giess-check/projekt7/';
 const shell=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
-function worker({missing=null,failPrecache=false,networkResponse=null,failPut=false,failPutAt=null,badPrecache=null,holdPut=false,failDelete=false,sharedVersions=null,failPutAfterWriteAt=null,skipPutAt=null,corruptPutAt=null,evictStageAt=null,ignoreRecoveryOpen=false}={}){
+function worker({missing=null,failPrecache=false,networkResponse=null,failPut=false,failPutAt=null,badPrecache=null,holdPut=false,failDelete=false,sharedVersions=null,failPutAfterWriteAt=null,skipPutAt=null,corruptPutAt=null,evictStageAt=null,ignoreRecoveryOpen=false,failEntryDelete=false}={}){
  const handlers=new Map(),versions=sharedVersions??new Map(),deleted=[];
  const current=shellVersion,old=oldShellVersion;
  const oldEntries=new Map(shell.map(path=>[new URL(path,scope).href,{old:true}]));
@@ -17,6 +17,7 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
  if(!versions.has('unrelated-app'))versions.set('unrelated-app',new Map());
  let waiting=0,claimed=0,networkCalls=0,putCalls=0,addAllCalls=0;
  let precacheShouldFail=failPrecache,precacheFault=badPrecache,putShouldFail=failPut;
+ let ignoreRecoveryOpenNow=ignoreRecoveryOpen,failEntryDeleteNow=failEntryDelete;
  let deleteFault=failDelete?'throw':'none';
  let holdMatchPath=null,holdFetchPath=null,releaseMatch=null,releaseFetch=null;
  let releasePut;
@@ -26,7 +27,7 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
   open:async name=>{
    // Fault injection: CacheStorage.open() resolves but the recovery cache
    // never appears in keys(), simulating a silently non-durable fence.
-   if(!versions.has(name)&&!(ignoreRecoveryOpen&&name===current+'-recovery'))versions.set(name,new Map());
+   if(!versions.has(name)&&!(ignoreRecoveryOpenNow&&name===current+'-recovery'))versions.set(name,new Map());
    const entries=versions.get(name)??new Map();
    return {
     match:async req=>{
@@ -69,7 +70,7 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
      entries.clear();
      for(const [key,value] of staged)entries.set(key,value);
     },
-    delete:async req=>entries.delete(keyOf(req)),
+    delete:async req=>failEntryDeleteNow?false:entries.delete(keyOf(req)),
     put:async(req,response)=>{
      putCalls++;
      if(putBarrier)await putBarrier;
@@ -137,6 +138,8 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
   setPutFailure:value=>{putShouldFail=value;},
   setDeleteFault:value=>{deleteFault=value;},
   setBadPrecache:value=>{precacheFault=value;},
+  setIgnoreRecoveryOpen:value=>{ignoreRecoveryOpenNow=value;},
+  setEntryDeleteFailure:value=>{failEntryDeleteNow=value;},
   releasePut:()=>releasePut?.(),
   pauseNextMatch:path=>{holdMatchPath=keyOf(path);releaseMatch=null;},
   releaseMatch:()=>releaseMatch?.(),
@@ -1053,4 +1056,34 @@ test('silently ignored runtime write cannot claim success when its fence is tran
  assert.equal(sw.putCalls,1);
  assert.equal(sw.versions.get(shellVersion).size,0);
  assert.equal(sw.versions.has(shellVersion+'-recovery'),false);
+});
+
+// An unfenced corrupt write is especially dangerous: a failed best-effort
+// delete can leave a metadata-complete cache that is byte-inconsistent.
+test('unfenced runtime corruption cannot be trusted by navigation or static reads',async()=>{
+ const sw=worker({corruptPutAt:1,ignoreRecoveryOpen:true,failEntryDelete:true});
+ await sw.lifecycle('install');await sw.lifecycle('activate');
+ sw.versions.get(shellVersion).delete(new URL('./app.mjs',scope).href);
+ assert.deepEqual(await sw.dispatch(sw.request('./app.mjs')),{networkError:true});
+ assert.equal(sw.versions.get(shellVersion).size,shell.length,'Corrupt write remains when deletion fails');
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),false,'Durable fence is missing');
+ assert.deepEqual(await sw.dispatch(sw.request('./style.css')),{networkError:true},'Unfenced worker must reject other cached assets');
+ const calls=sw.networkCalls;
+ assert.deepEqual(await sw.dispatch(sw.request('./index.html',{mode:'navigate',cache:'only-if-cached'})),{networkError:true});
+ assert.equal(sw.networkCalls,calls,'Cache-only navigation must never trigger a network recovery');
+ assert.deepEqual(await sw.dispatch(sw.request('./index.html',{mode:'navigate'})),{networkError:true},'Complete MIME metadata must not clear the failure');
+});
+
+test('unfenced corruption recovers only after a durable full-shell promotion',async()=>{
+ const sw=worker({corruptPutAt:1,ignoreRecoveryOpen:true,failEntryDelete:true});
+ await sw.lifecycle('install');await sw.lifecycle('activate');
+ sw.versions.get(shellVersion).delete(new URL('./app.mjs',scope).href);
+ assert.deepEqual(await sw.dispatch(sw.request('./app.mjs')),{networkError:true});
+ sw.setIgnoreRecoveryOpen(false);sw.setEntryDeleteFailure(false);
+ const page=await sw.dispatch(sw.request('./index.html',{mode:'navigate'}));
+ assert.equal(page?.url,new URL('./index.html',scope).href);
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),false,'Recovery fence must be cleared after verified promotion');
+ assert.equal(sw.versions.get(shellVersion).size,shell.length);
+ const asset=await sw.dispatch(sw.request('./app.mjs'));
+ assert.equal(asset?.url,new URL('./app.mjs',scope).href,'Repaired shell is available offline');
 });
