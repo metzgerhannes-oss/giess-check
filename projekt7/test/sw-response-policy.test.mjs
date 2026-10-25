@@ -8,12 +8,12 @@ const scope='https://example.test/giess-check/projekt7/';
 function harness(networkHeaders={}){
  const handlers=new Map();
  const entries=new Map();
- let writes=0,fetches=0;
+ let writes=0,fetches=0,opens=[];
  const self={registration:{scope},addEventListener:(name,handler)=>handlers.set(name,handler)};
- const caches={open:async()=>({
+ const caches={open:async name=>{opens.push(name);return {
   match:async request=>entries.get(typeof request==='string'?new URL(request,scope).href:request.url),
   put:async(request,response)=>{writes++;entries.set(request.url,response);}
- })};
+ };}};
  const response=(path,headers={})=>({
   ok:true,status:200,redirected:false,type:'basic',url:new URL(path,scope).href,
   headers:{get:name=>Object.hasOwn(headers,name)?headers[name]:null},
@@ -34,7 +34,7 @@ function harness(networkHeaders={}){
   url:new URL(path,scope).href,method:'GET',mode:'cors',
   headers:{has:name=>headerNames.includes(name)}
  });
- return {trusted:sandbox.__trusted,response,dispatch,request,entries,
+ return {trusted:sandbox.__trusted,response,dispatch,request,entries,opens,
   get writes(){return writes;},get fetches(){return fetches;}};
 }
 test('normal immutable public shell responses remain cacheable',()=>{
@@ -58,7 +58,11 @@ for(const [label,headers] of [
  ['cookie variant',{'vary':'Accept-Encoding, Cookie'}],
  ['authorization variant',{'vary':'Authorization'}],
  ['proxy authorization variant',{'vary':'Proxy-Authorization'}],
- ['origin variant',{'vary':'Origin'}]
+ ['origin variant',{'vary':'Origin'}],
+ ['session-setting cookie',{'set-cookie':'sid=private; HttpOnly'}],
+ ['legacy session-setting cookie',{'set-cookie2':'sid=private'}],
+ ['non-byte content range',{'content-range':'items 0-4/10'}],
+ ['unsatisfied byte range',{'content-range':'bytes */200'}]
 ]){
  test('precache trust gate rejects '+label,()=>{
   const h=harness();
@@ -125,4 +129,35 @@ test('safe cache variation and public cache-control remain valid',()=>{
   'content-type':'text/javascript','cache-control':'public, max-age=3600',
   'vary':'Accept-Encoding, Accept-Language'
  }), './app.mjs'),true);
+});
+
+
+test('cache-only static reads never fetch or persist missing and untrusted entries',async()=>{
+ const h=harness(),request={...h.request('./app.mjs'),cache:'only-if-cached'};
+ assert.equal((await h.dispatch(request)).networkError,true);
+ const key=new URL('./app.mjs',scope).href;
+ h.entries.set(key,h.response('./app.mjs',{'content-type':'text/html'}));
+ assert.equal((await h.dispatch(request)).networkError,true);
+ assert.equal(h.fetches,0);
+ assert.equal(h.writes,0);
+ assert.equal(h.entries.get(key).headers.get('content-type'),'text/html');
+ assert.equal(h.opens.length,2);
+});
+
+test('cache-only static hit uses validated offline bytes without network',async()=>{
+ const h=harness(),request={...h.request('./app.mjs'),cache:'only-if-cached'};
+ const trusted=h.response('./app.mjs',{'content-type':'text/javascript'});
+ h.entries.set(new URL('./app.mjs',scope).href,trusted);
+ assert.equal(await h.dispatch(request),trusted);
+ assert.equal(h.fetches,0);
+ assert.equal(h.writes,0);
+});
+
+test('cache-only navigation refuses incomplete shell without starting recovery',async()=>{
+ const h=harness(),request={...h.request('./index.html'),mode:'navigate',cache:'only-if-cached'};
+ assert.equal((await h.dispatch(request)).networkError,true);
+ assert.equal(h.fetches,0);
+ assert.equal(h.writes,0);
+ assert.equal(h.opens.length,1,'No staging cache may be opened for a cache-only request');
+ assert.ok(!h.opens.some(name=>name.endsWith('-recovery')));
 });

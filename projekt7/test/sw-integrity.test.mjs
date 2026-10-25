@@ -82,7 +82,7 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
     path.endsWith('.svg')?'image/svg+xml':path.endsWith('.png')?'image/png':'application/manifest+json';
   return networkResponse?networkResponse(req):{
    ok:true,status:200,redirected:false,type:'basic',url:req.url,
-   headers:{get:()=>mime},clone(){return this;}
+   headers:{get:name=>name==='content-type'?mime:null},clone(){return this;}
   };
  };
  runInNewContext(source,{self,caches,fetch,URL,Set,Response:{error:()=>({networkError:true})}});

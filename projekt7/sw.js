@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v30';
+const VERSION='klarpunkt-shell-v31';
 const SHELL_PREFIX='klarpunkt-shell-v';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Cache only this app's immutable shell paths, never arbitrary data or URL variants.
@@ -22,9 +22,13 @@ function trustedShellAsset(response,path){
  // A static offline shell must not persist a response requiring revalidation
  // or a response scoped to a particular user's session.
  if(cacheControl.split(',').some(value=>/^(?:no-store|no-cache|private)(?:\s*(?:=|$))/i.test(value.trim())))return false;
+ // Never persist session-setting responses in a public offline shell.
+ if(headers?.get('set-cookie')||headers?.get('set-cookie2'))return false;
  const vary=headers?.get('vary')||'';
  if(vary.split(',').some(value=>/^(?:\*|cookie|authorization|proxy-authorization|origin)$/i.test(value.trim())))return false;
- if(/^\s*bytes\s+\d+-\d+\/(?:\d+|\*)/i.test(headers?.get('content-range')||''))return false;
+ // A full HTTP 200 asset must not carry any range metadata, even a
+ // non-byte unit or malformed range that the browser would otherwise accept.
+ if((headers?.get('content-range')||'').trim())return false;
  if(/^\s*attachment(?:\s*;|$)/i.test(headers?.get('content-disposition')||''))return false;
  if(/^\s*0\s*$/.test(headers?.get('content-length')||''))return false;
  const type=headers?.get('content-type')?.split(';')[0]?.trim().toLowerCase();
@@ -169,6 +173,8 @@ self.addEventListener('fetch',event=>{
      requireComplete:true,allowFailedRecovery:true
     });
     if(hit&&trustedShellAsset(hit,'./index.html'))return hit;
+    // A cache-only request must not trigger an implicit network recovery.
+    if(request.cache==='only-if-cached')return Response.error();
     const restored=await recoverShell(cache);
     return trustedShellAsset(restored,'./index.html')?restored:Response.error();
    }catch{
@@ -185,6 +191,7 @@ self.addEventListener('fetch',event=>{
   try{hit=await stableCacheHit(cache,request);}
   catch{return Response.error();}
   if(trustedShellAsset(hit,shellPath))return hit;
+  if(request.cache==='only-if-cached')return Response.error();
   const beforeFetch=shellEpoch;
   const response=await fetch(request);
   // A full recovery may start AND finish while the network request is
