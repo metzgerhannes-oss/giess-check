@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v34';
+const VERSION='klarpunkt-shell-v35';
 const SHELL_PREFIX='klarpunkt-shell-v';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Cache only this app's immutable shell paths, never arbitrary data or URL variants.
@@ -101,36 +101,27 @@ async function recoverShell(cache){
    recoveryFailed=false;return await cache.match('./index.html');
   }
   const staged=await caches.open(RECOVERY_CACHE);
-  let verifiedStage=false, promoted=false;
-  try{
-   // A previous worker may have crashed or hit quota halfway through
-   // promotion. Reuse only a complete, validated staging shell: this permits
-   // an offline retry after a restart without trusting partial active entries.
-   verifiedStage=await completeShell(staged);
-   if(!verifiedStage){
-    await staged.addAll(FILES);
-    verifiedStage=await completeShell(staged);
-    if(!verifiedStage)throw new Error('Incomplete offline shell in recovery staging');
-   }
-   for(const path of FILES){
-    const response=await staged.match(path);
-    await cache.put(path,response);
-   }
-   if(!(await completeShell(cache)))throw new Error('Incomplete offline shell after recovery');
-   promoted=true;
-   const page=await cache.match('./index.html');
-   recoveryFailed=false;
-   return page;
-  }finally{
-   // Retain staging on EVERY failure, including invalid/redownload-failed
-   // staging: after a restart we cannot prove whether an earlier worker
-   // already wrote a mixed active shell. A future navigation must reconcile
-   // the stage rather than trusting a metadata-complete active cache.
-   // Only a fully promoted shell permits removal of this durable fence.
-   if(promoted){
-    try{await caches.delete(RECOVERY_CACHE);}catch{}
-   }
+  // Staging is the durable fence for a potentially mixed active cache.
+  // Never declare a promotion successful before this fence is confirmed gone.
+  if(!(await completeShell(staged))){
+   await staged.addAll(FILES);
+   if(!(await completeShell(staged)))throw new Error('Incomplete offline shell in recovery staging');
   }
+  for(const path of FILES){
+   const response=await staged.match(path);
+   await cache.put(path,response);
+  }
+  if(!(await completeShell(cache)))throw new Error('Incomplete offline shell after recovery');
+  // A delete rejection, false return, or unexpectedly persistent stage
+  // means the promotion has NOT committed. Keep the fence and fail closed;
+  // a subsequent navigation (even after worker restart) can retry offline.
+  if(!(await caches.delete(RECOVERY_CACHE))||await pendingPromotion()){
+   throw new Error('Offline shell recovery fence was not cleared');
+  }
+  const page=await cache.match('./index.html');
+  if(!trustedShellAsset(page,'./index.html'))throw new Error('Offline entrypoint missing after promotion');
+  recoveryFailed=false;
+  return page;
    }catch(error){
     recoveryFailed=true;
     throw error;

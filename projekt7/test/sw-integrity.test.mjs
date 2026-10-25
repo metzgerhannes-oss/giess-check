@@ -17,6 +17,7 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
  if(!versions.has('unrelated-app'))versions.set('unrelated-app',new Map());
  let waiting=0,claimed=0,networkCalls=0,putCalls=0,addAllCalls=0;
  let precacheShouldFail=failPrecache,precacheFault=badPrecache,putShouldFail=failPut;
+ let deleteFault=failDelete?'throw':'none';
  let holdMatchPath=null,holdFetchPath=null,releaseMatch=null,releaseFetch=null;
  let releasePut;
  const putBarrier=holdPut?new Promise(resolve=>{releasePut=resolve;}):null;
@@ -67,7 +68,13 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
    };
   },
   keys:async()=>[...versions.keys()],
-  delete:async name=>{deleted.push(name);if(failDelete)throw Error('Cache deletion denied');return versions.delete(name);}
+  delete:async name=>{
+   deleted.push(name);
+   if(deleteFault==='throw')throw Error('Cache deletion denied');
+   if(deleteFault==='false')return false;
+   if(deleteFault==='stale')return true;
+   return versions.delete(name);
+  }
  };
  const self={
   registration:{scope},addEventListener:(type,fn)=>handlers.set(type,fn),
@@ -105,6 +112,7 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
   lifecycle,request,dispatch,versions,deleted,
   setPrecacheFailure:value=>{precacheShouldFail=value;},
   setPutFailure:value=>{putShouldFail=value;},
+  setDeleteFault:value=>{deleteFault=value;},
   setBadPrecache:value=>{precacheFault=value;},
   releasePut:()=>releasePut?.(),
   pauseNextMatch:path=>{holdMatchPath=keyOf(path);releaseMatch=null;},
@@ -853,5 +861,38 @@ for(const [label,writeFault] of [
   assert.equal(asset,entries.get(appUrl),'Runtime response must be the promoted cache asset');
   assert.equal(asset.staleRuntime,undefined,'Pre-promotion network bytes must not escape');
   assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
+ });
+}
+
+for(const [label,deleteFault] of [
+ ['throws','throw'],
+ ['reports failure','false'],
+ ['reports success but leaves stage behind','stale']
+]){
+ test('offline promotion '+label+' during fence cleanup remains blocked until an offline retry',async()=>{
+  const sw=worker();
+  await sw.lifecycle('install');
+  const entries=sw.versions.get(shellVersion);
+  entries.delete(new URL('./core.mjs',scope).href);
+  const navigation=sw.request('./index.html',{mode:'navigate'});
+  sw.setDeleteFault(deleteFault);
+  assert.deepEqual(await sw.dispatch(navigation),{networkError:true},
+   'An uncommitted promotion must never serve the entrypoint');
+  assert.equal(entries.size,shell.length,'All active entries may be present despite an uncommitted fence');
+  assert.equal(sw.versions.has(shellVersion+'-recovery'),true,
+   'The durable recovery fence must remain until a confirmed commit');
+  assert.deepEqual(await sw.dispatch(sw.request('./app.mjs',{cache:'only-if-cached'})),
+   {networkError:true},'Static cache-only reads cannot bypass the fence');
+  const restarted=worker({sharedVersions:sw.versions,failPrecache:true});
+  assert.deepEqual(await restarted.dispatch(restarted.request('./style.css',{cache:'only-if-cached'})),
+   {networkError:true},'A restarted worker must also honor the durable fence');
+  const page=await restarted.dispatch(navigation);
+  assert.equal(page.headers.get('content-type'),'text/html');
+  assert.equal(restarted.networkCalls,0);
+  assert.equal(restarted.addAllCalls,0,'A verified stage must recover without network or re-download');
+  assert.equal(restarted.versions.has(shellVersion+'-recovery'),false);
+  const asset=await restarted.dispatch(restarted.request('./app.mjs',{cache:'only-if-cached'}));
+  assert.equal(asset.headers.get('content-type'),'text/javascript');
+  assert.equal(restarted.versions.has(oldShellVersion),true);
  });
 }
