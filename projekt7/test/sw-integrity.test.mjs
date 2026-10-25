@@ -335,8 +335,8 @@ test('failed offline recovery fails closed and retains the previous shell',async
  assert.deepEqual(await sw.dispatch(sw.request('./index.html',{mode:'navigate'})),{networkError:true});
  assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
  assert.equal(sw.waiting,0);
- assert.deepEqual(sw.deleted,[shellVersion+'-recovery']);
- assert.equal(sw.versions.has(shellVersion+'-recovery'),false);
+ assert.deepEqual(sw.deleted,[]);
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),true,'Failed staging remains a durable recovery fence');
 });
 test('invalid MIME during recovery never exposes partial HTML',async()=>{
  const sw=worker({badPrecache:{path:'./app.mjs',mime:'text/html'}});
@@ -456,7 +456,7 @@ test('untrusted staged recovery cannot replace any existing active-shell entries
  assert.deepEqual(await sw.dispatch(sw.request('./index.html',{mode:'navigate'})),{networkError:true});
  assert.deepEqual([...entries.entries()],before,'Staging must validate before touching active cache');
  assert.equal(sw.putCalls,0,'Invalid staged response must never be promoted');
- assert.equal(sw.versions.has(shellVersion+'-recovery'),false,'Failed staging cache must be removed');
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),true,'Failed staging must remain as a durable recovery fence');
  assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
 });
 
@@ -613,7 +613,7 @@ test('poisoned leftover staging is revalidated and replaced before promotion',as
  assert.equal(sw.versions.has(shellVersion+'-recovery'),false);
 });
 
-test('failed re-download of poisoned staging removes it without modifying old release',async()=>{
+test('failed re-download of poisoned staging retains its recovery fence and old release',async()=>{
  const sw=worker({failPut:true});
  await sw.lifecycle('install');
  sw.versions.get(shellVersion).delete(new URL('./core.mjs',scope).href);
@@ -624,7 +624,7 @@ test('failed re-download of poisoned staging removes it without modifying old re
  sw.setPutFailure(false);
  sw.setPrecacheFailure(true);
  assert.deepEqual(await sw.dispatch(req),{networkError:true});
- assert.equal(sw.versions.has(shellVersion+'-recovery'),false);
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),true);
  assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
 });
 
@@ -757,4 +757,64 @@ test('incomplete failed promotion never becomes trusted through static cache hit
  }
  assert.equal(sw.networkCalls,0);
  assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
+});
+
+test('restart refuses metadata-complete active shell after a late final promotion error',async()=>{
+ const sw=worker({failPutAfterWriteAt:shell.length});
+ await sw.lifecycle('install');
+ sw.versions.get(shellVersion).delete(new URL('./core.mjs',scope).href);
+ const navigate=sw.request('./index.html',{mode:'navigate'});
+ assert.deepEqual(await sw.dispatch(navigate),{networkError:true});
+ assert.equal(sw.versions.get(shellVersion).size,shell.length,
+  'Every active URL exists, but the promotion was not committed');
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),true);
+ const restarted=worker({sharedVersions:sw.versions,failPrecache:true});
+ for(const path of ['./app.mjs','./style.css']){
+  assert.deepEqual(await restarted.dispatch(restarted.request(path,{cache:'only-if-cached'})),
+   {networkError:true},path+' must not leak a potentially mixed shell');
+ }
+ assert.deepEqual(await restarted.dispatch(restarted.request('./index.html',{
+  mode:'navigate',cache:'only-if-cached'
+ })),{networkError:true});
+ assert.equal(restarted.networkCalls,0);
+ const page=await restarted.dispatch(navigate);
+ assert.equal(page.headers.get('content-type'),'text/html');
+ assert.equal(restarted.addAllCalls,0,'Complete staging must be reused offline');
+ assert.equal(restarted.versions.has(shellVersion+'-recovery'),false);
+ const script=await restarted.dispatch(restarted.request('./app.mjs',{cache:'only-if-cached'}));
+ assert.equal(script.headers.get('content-type'),'text/javascript');
+ assert.equal(restarted.versions.get(oldShellVersion).size,shell.length);
+});
+
+test('invalid leftover stage cannot silently unlock a complete active shell',async()=>{
+ const sw=worker({failPutAfterWriteAt:shell.length});
+ await sw.lifecycle('install');
+ sw.versions.get(shellVersion).delete(new URL('./core.mjs',scope).href);
+ const navigate=sw.request('./index.html',{mode:'navigate'});
+ assert.deepEqual(await sw.dispatch(navigate),{networkError:true});
+ const staged=sw.versions.get(shellVersion+'-recovery');
+ staged.get(new URL('./app.mjs',scope).href).headers.get=()=> 'text/html';
+ const restarted=worker({sharedVersions:sw.versions,failPrecache:true});
+ assert.deepEqual(await restarted.dispatch(navigate),{networkError:true});
+ assert.equal(restarted.versions.has(shellVersion+'-recovery'),true,
+  'A failed replacement must not erase the only persistent promotion fence');
+ assert.deepEqual(await restarted.dispatch(restarted.request('./app.mjs')),
+  {networkError:true});
+ assert.equal(restarted.networkCalls,0);
+ assert.equal(restarted.versions.get(oldShellVersion).size,shell.length);
+});
+
+test('a valid stage reconciles an active shell even when every asset URL exists',async()=>{
+ const sw=worker({failPutAfterWriteAt:shell.length});
+ await sw.lifecycle('install');
+ sw.versions.get(shellVersion).delete(new URL('./core.mjs',scope).href);
+ const navigate=sw.request('./index.html',{mode:'navigate'});
+ assert.deepEqual(await sw.dispatch(navigate),{networkError:true});
+ const restarted=worker({sharedVersions:sw.versions,failPrecache:true});
+ const page=await restarted.dispatch(navigate);
+ assert.equal(page.headers.get('content-type'),'text/html');
+ assert.equal(restarted.putCalls,shell.length,
+  'The active cache must be repromoted, not accepted solely by MIME metadata');
+ assert.equal(restarted.networkCalls,0);
+ assert.equal(restarted.versions.has(shellVersion+'-recovery'),false);
 });
