@@ -32,7 +32,10 @@ export function inspectStorage(storage){
   const value=decode(backup);
   if(value)return {state:'recovered',project:value,primaryRaw:primary,backupRaw:backup};
  }catch{}
- return {state:'damaged',project:starterProject(),primaryRaw:primary};
+ // Even an invalid or absent backup is a revision: keep its exact raw value
+ // so an explicit damaged-state replacement cannot shadow a new recovery
+ // copy arriving in another tab during the confirmation dialog.
+ return {state:'damaged',project:starterProject(),primaryRaw:primary,backupRaw:backup};
 }
 export function saveProject(storage,project,override=false,expectedPrimaryRaw=undefined,onBackupFailure=null,expectedRecoveredBackupRaw=undefined){
  const clean=validateProject(project);

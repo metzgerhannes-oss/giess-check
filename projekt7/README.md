@@ -158,3 +158,17 @@ einem eingefrorenen Tab prüfen zusätzlich diese Backup-Revision. Eine
 zwischenzeitlich geänderte oder gelöschte Sicherung führt zum Abbruch vor
 dem ersten Schreibzugriff. Gesunde Primärdaten bleiben von optionalen
 Backup-Lesefehlern unabhängig. localStorage bietet kein atomares CAS.
+
+
+## Sprint 46: Revisionsschutz bei beschädigten Browserständen
+
+Auch wenn sowohl die aktive lokale Kopie als auch die Wiederherstellungskopie
+beschädigt sind (oder die Wiederherstellungskopie fehlt), wird deren **exakter
+Ausgangszustand** beim Laden festgehalten. Vor einer ausdrücklich bestätigten
+Ersetzung wird erneut geprüft, ob ein anderer Tab zwischenzeitlich eine
+Wiederherstellungskopie angelegt, gelöscht oder verändert hat. In diesem Fall
+wird der Schreibzugriff verweigert und zum Neuladen aufgefordert, statt eine
+möglicherweise rettbare neue Kopie zu verdecken. Storage-Events und die Rückkehr
+aus einem eingefrorenen Tab prüfen diesen Zustand ebenfalls. Der Schutz ist
+Best-Effort: Browser-localStorage bietet keine atomare Mehrschlüssel-Transaktion.
+Die Regressionen verwenden ausschließlich synthetische lokale Daten.
