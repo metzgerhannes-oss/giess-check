@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v40';
+const VERSION='klarpunkt-shell-v41';
 const SHELL_PREFIX='klarpunkt-shell-v';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Fetch public shell bytes without browser cookies or HTTP credentials.
@@ -46,6 +46,20 @@ function trustedShellAsset(response,path){
    path.endsWith('.css')?'css':path.endsWith('.svg')?'svg':
    path.endsWith('.png')?'png':'manifest';
  return MIME[kind].includes(type);
+}
+// CacheStorage.put() can resolve even when a backend silently ignores or
+// alters an entry. Metadata-only checks cannot detect a mixed-version shell:
+// compare the actual decoded response bodies before removing the durable
+// recovery fence. Only invoked during full-shell promotion (not every fetch).
+async function sameShellBytes(expected,stored){
+ if(!expected||!stored||typeof expected.clone!=='function'||typeof stored.clone!=='function')return false;
+ try{
+  const [a,b]=await Promise.all([expected.clone().arrayBuffer(),stored.clone().arrayBuffer()]);
+  if(!a.byteLength||a.byteLength!==b.byteLength)return false;
+  const before=new Uint8Array(a),after=new Uint8Array(b);
+  for(let i=0;i<before.length;i++)if(before[i]!==after[i])return false;
+  return true;
+ }catch{return false;}
 }
 async function completeShell(cache){
  // Never replace a working older shell with a partial or poisoned cache.
@@ -119,6 +133,16 @@ async function recoverShell(cache){
    await cache.put(path,response);
   }
   if(!(await completeShell(cache)))throw new Error('Incomplete offline shell after recovery');
+  // The stage must still exist and every active body must match it exactly.
+  // Quota eviction, a dropped write or altered bytes leave the fence in place
+  // so the next navigation can retry, including offline after worker restart.
+  for(const path of FILES){
+   const [expected,stored]=await Promise.all([staged.match(path),cache.match(path)]);
+   if(!trustedShellAsset(expected,path)||!trustedShellAsset(stored,path)||
+      !(await sameShellBytes(expected,stored))){
+    throw new Error('Offline shell promotion bytes were not confirmed');
+   }
+  }
   // A delete rejection, false return, or unexpectedly persistent stage
   // means the promotion has NOT committed. Keep the fence and fail closed;
   // a subsequent navigation (even after worker restart) can retry offline.
