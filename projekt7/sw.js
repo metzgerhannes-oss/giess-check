@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v29';
+const VERSION='klarpunkt-shell-v30';
 const SHELL_PREFIX='klarpunkt-shell-v';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Cache only this app's immutable shell paths, never arbitrary data or URL variants.
@@ -46,13 +46,35 @@ async function completeShell(cache){
 // fail closed, and the preceding release is never modified.
 const RECOVERY_CACHE=VERSION+'-recovery';
 let recoveryInFlight=null;
+// Increment before and after every recovery. A delayed cache read or network
+// response must never be delivered across a whole-shell promotion.
+let shellEpoch=0;
+let recoveryFailed=false;
 // Runtime asset repairs and whole-shell promotion must not write the same
 // cache concurrently. An in-flight repair may complete the shell by itself.
 const runtimeWrites=new Set();
+async function stableCacheHit(cache,path,{requireComplete=false,allowFailedRecovery=false}={}){
+ for(let attempt=0;attempt<5;attempt++){
+  const pending=recoveryInFlight;
+  if(pending)await pending;
+  const epoch=shellEpoch;
+  const hit=await cache.match(path);
+  const complete=!requireComplete||(hit&&await completeShell(cache));
+  // CacheStorage reads are async: a promotion can begin and finish while a
+  // match is pending. Discard the old response and retry against the new epoch.
+  if(recoveryInFlight||epoch!==shellEpoch)continue;
+  if(recoveryFailed&&!allowFailedRecovery)throw new Error('Offline recovery failed');
+  return complete?hit:null;
+ }
+ throw new Error('Offline shell changed during cache read');
+}
 async function recoverShell(cache){
- if(!recoveryInFlight)recoveryInFlight=(async()=>{
+ if(!recoveryInFlight){
+  shellEpoch++;
+  recoveryInFlight=(async()=>{
+   try{
   await Promise.allSettled([...runtimeWrites]);
-  if(await completeShell(cache))return cache.match('./index.html');
+  if(await completeShell(cache)){recoveryFailed=false;return await cache.match('./index.html');}
   const staged=await caches.open(RECOVERY_CACHE);
   let verifiedStage=false, promoted=false;
   try{
@@ -71,7 +93,9 @@ async function recoverShell(cache){
    }
    if(!(await completeShell(cache)))throw new Error('Incomplete offline shell after recovery');
    promoted=true;
-   return cache.match('./index.html');
+   const page=await cache.match('./index.html');
+   recoveryFailed=false;
+   return page;
   }finally{
    // Keep a verified staging shell when promotion fails: a subsequent worker
    // can finish offline. Remove invalid staging and completed promotions.
@@ -80,7 +104,14 @@ async function recoverShell(cache){
     try{await caches.delete(RECOVERY_CACHE);}catch{}
    }
   }
- })();
+   }catch(error){
+    recoveryFailed=true;
+    throw error;
+   }finally{
+    shellEpoch++;
+   }
+  })();
+ }
  const active=recoveryInFlight;
  try{return await active;}
  finally{if(recoveryInFlight===active)recoveryInFlight=null;}
@@ -131,11 +162,13 @@ self.addEventListener('fetch',event=>{
   // Version-pinned navigation prevents fresh HTML with stale cached JS/CSS.
   if(url.pathname!==scope.pathname&&url.pathname!==index.pathname)return;
   event.respondWith(caches.open(VERSION).then(async cache=>{
-   const hit=await cache.match('./index.html');
-   // Never execute poisoned HTML. A full, validated online recovery may repair it.
-   // An index alone is not an offline app: check every asset before serving it.
-   if(hit&&trustedShellAsset(hit,'./index.html')&&await completeShell(cache))return hit;
    try{
+    // Recheck both the page and complete asset set after any concurrent
+    // promotion; a delayed read must not serve the pre-recovery HTML.
+    const hit=await stableCacheHit(cache,'./index.html',{
+     requireComplete:true,allowFailedRecovery:true
+    });
+    if(hit&&trustedShellAsset(hit,'./index.html'))return hit;
     const restored=await recoverShell(cache);
     return trustedShellAsset(restored,'./index.html')?restored:Response.error();
    }catch{
@@ -148,20 +181,19 @@ self.addEventListener('fetch',event=>{
  if(!STATIC_PATHS.has(url.pathname))return;
  event.respondWith(caches.open(VERSION).then(async cache=>{
   const shellPath=PATH_BY_PATHNAME.get(url.pathname);
-  let hit=await cache.match(request);
-  // A concurrent navigation can start recovery while a cache read is pending.
-  // Do not serve an older entry from a shell being promoted, or race a repair
-  // write against whole-shell promotion.
-  if(recoveryInFlight){
-   try{await recoveryInFlight;}catch{return Response.error();}
-   hit=await cache.match(request);
-  }
+  let hit;
+  try{hit=await stableCacheHit(cache,request);}
+  catch{return Response.error();}
   if(trustedShellAsset(hit,shellPath))return hit;
+  const beforeFetch=shellEpoch;
   const response=await fetch(request);
-  if(recoveryInFlight){
-   try{await recoveryInFlight;}catch{return Response.error();}
-   const recovered=await cache.match(request);
-   if(trustedShellAsset(recovered,shellPath))return recovered;
+  // A full recovery may start AND finish while the network request is
+  // pending. Never write that pre-recovery response over the validated shell.
+  if(recoveryInFlight||shellEpoch!==beforeFetch){
+   try{
+    const recovered=await stableCacheHit(cache,request);
+    return trustedShellAsset(recovered,shellPath)?recovered:Response.error();
+   }catch{return Response.error();}
   }
   // Apply precache MIME, origin and redirect checks to runtime repairs too.
   if(!trustedShellAsset(response,shellPath))return Response.error();

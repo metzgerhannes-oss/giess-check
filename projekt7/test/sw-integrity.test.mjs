@@ -17,6 +17,7 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
  if(!versions.has('unrelated-app'))versions.set('unrelated-app',new Map());
  let waiting=0,claimed=0,networkCalls=0,putCalls=0,addAllCalls=0;
  let precacheShouldFail=failPrecache,precacheFault=badPrecache,putShouldFail=failPut;
+ let holdMatchPath=null,holdFetchPath=null,releaseMatch=null,releaseFetch=null;
  let releasePut;
  const putBarrier=holdPut?new Promise(resolve=>{releasePut=resolve;}):null;
  const keyOf=req=>new URL(typeof req==='string'?req:req.url,scope).href;
@@ -25,7 +26,14 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
    if(!versions.has(name))versions.set(name,new Map());
    const entries=versions.get(name);
    return {
-    match:async req=>entries.get(keyOf(req)),
+    match:async req=>{
+     const snapshot=entries.get(keyOf(req));
+     if(name===current&&holdMatchPath===keyOf(req)){
+      holdMatchPath=null;
+      await new Promise(resolve=>{releaseMatch=resolve;});
+     }
+     return snapshot;
+    },
     addAll:async files=>{
      addAllCalls++;
      // Model atomic Cache.addAll: stage all entries before committing.
@@ -64,6 +72,10 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
  };
  const fetch=async req=>{
   networkCalls++;
+  if(holdFetchPath===req.url){
+   holdFetchPath=null;
+   await new Promise(resolve=>{releaseFetch=resolve;});
+  }
   const path=shell.find(item=>keyOf(item)===req.url)||'./index.html';
   const mime=path==='./'||path.endsWith('.html')?'text/html':
     path.endsWith('.mjs')?'text/javascript':path.endsWith('.css')?'text/css':
@@ -92,6 +104,12 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
   setPutFailure:value=>{putShouldFail=value;},
   setBadPrecache:value=>{precacheFault=value;},
   releasePut:()=>releasePut?.(),
+  pauseNextMatch:path=>{holdMatchPath=keyOf(path);releaseMatch=null;},
+  releaseMatch:()=>releaseMatch?.(),
+  pauseNextFetch:path=>{holdFetchPath=keyOf(path);releaseFetch=null;},
+  releaseFetch:()=>releaseFetch?.(),
+  get matchPaused(){return Boolean(releaseMatch);},
+  get fetchPaused(){return Boolean(releaseFetch);},
   get waiting(){return waiting;},get claimed(){return claimed;},
   get networkCalls(){return networkCalls;},get putCalls(){return putCalls;},get addAllCalls(){return addAllCalls;}
  };
@@ -603,5 +621,99 @@ test('failed re-download of poisoned staging removes it without modifying old re
  sw.setPrecacheFailure(true);
  assert.deepEqual(await sw.dispatch(req),{networkError:true});
  assert.equal(sw.versions.has(shellVersion+'-recovery'),false);
+ assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
+});
+
+test('delayed cached asset read cannot return pre-promotion bytes',async()=>{
+ const sw=worker();
+ await sw.lifecycle('install');
+ const entries=sw.versions.get(shellVersion);
+ const url=new URL('./app.mjs',scope).href;
+ const stale=entries.get(url);
+ entries.delete(new URL('./core.mjs',scope).href);
+ sw.pauseNextMatch('./app.mjs');
+ const asset=sw.dispatch(sw.request('./app.mjs'));
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(sw.matchPaused,true);
+ const page=await sw.dispatch(sw.request('./index.html',{mode:'navigate'}));
+ assert.equal(page.ok,true);
+ sw.releaseMatch();
+ const refreshed=await asset;
+ assert.equal(refreshed,entries.get(url));
+ assert.notEqual(refreshed,stale,'Old cached bytes must not escape after promotion');
+ assert.equal(sw.networkCalls,0);
+});
+
+test('delayed cached asset read fails closed after interrupted promotion',async()=>{
+ const sw=worker({failPutAt:4});
+ await sw.lifecycle('install');
+ sw.versions.get(shellVersion).delete(new URL('./core.mjs',scope).href);
+ sw.pauseNextMatch('./app.mjs');
+ const asset=sw.dispatch(sw.request('./app.mjs'));
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(sw.matchPaused,true);
+ assert.deepEqual(await sw.dispatch(sw.request('./index.html',{mode:'navigate'})),{networkError:true});
+ sw.releaseMatch();
+ assert.deepEqual(await asset,{networkError:true});
+ assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),true);
+});
+
+test('delayed navigation read rechecks complete shell after concurrent promotion',async()=>{
+ const sw=worker();
+ await sw.lifecycle('install');
+ const entries=sw.versions.get(shellVersion);
+ const url=new URL('./index.html',scope).href;
+ const stale=entries.get(url);
+ entries.delete(new URL('./core.mjs',scope).href);
+ sw.pauseNextMatch('./index.html');
+ const first=sw.dispatch(sw.request('./index.html',{mode:'navigate'}));
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(sw.matchPaused,true);
+ const second=await sw.dispatch(sw.request('./index.html',{mode:'navigate'}));
+ assert.equal(second.ok,true);
+ sw.releaseMatch();
+ const page=await first;
+ assert.equal(page,entries.get(url));
+ assert.notEqual(page,stale);
+ assert.equal(sw.addAllCalls,2,'Second navigation must perform the only recovery');
+});
+
+test('delayed network repair cannot overwrite a newly promoted offline asset',async()=>{
+ const sw=worker();
+ await sw.lifecycle('install');
+ const entries=sw.versions.get(shellVersion);
+ const url=new URL('./app.mjs',scope).href;
+ entries.delete(url);
+ entries.delete(new URL('./core.mjs',scope).href);
+ sw.pauseNextFetch('./app.mjs');
+ const repairing=sw.dispatch(sw.request('./app.mjs'));
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(sw.fetchPaused,true);
+ const page=await sw.dispatch(sw.request('./index.html',{mode:'navigate'}));
+ assert.equal(page.ok,true);
+ const writes=sw.putCalls;
+ sw.releaseFetch();
+ const asset=await repairing;
+ assert.equal(asset,entries.get(url),'Recovered asset wins over stale network fetch');
+ assert.equal(sw.putCalls,writes,'Stale repair must not write after promotion');
+});
+
+test('delayed network repair fails closed after a failed shell promotion',async()=>{
+ const sw=worker({failPutAt:3});
+ await sw.lifecycle('install');
+ const entries=sw.versions.get(shellVersion);
+ const url=new URL('./app.mjs',scope).href;
+ entries.delete(url);
+ entries.delete(new URL('./core.mjs',scope).href);
+ sw.pauseNextFetch('./app.mjs');
+ const repairing=sw.dispatch(sw.request('./app.mjs'));
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(sw.fetchPaused,true);
+ assert.deepEqual(await sw.dispatch(sw.request('./index.html',{mode:'navigate'})),{networkError:true});
+ const writes=sw.putCalls;
+ sw.releaseFetch();
+ assert.deepEqual(await repairing,{networkError:true});
+ assert.equal(sw.putCalls,writes,'No stale write after failed recovery');
  assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
 });

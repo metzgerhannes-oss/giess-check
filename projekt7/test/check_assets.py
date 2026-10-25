@@ -137,7 +137,11 @@ assert 'await cache.addAll(FILES)' in sw, "Offline recovery must be all-or-nothi
 # Sprint 20: fail closed on partial/untrusted network shell assets, recover poisoned HTML only after a complete trust gate.
 assert 'response.status!==200' in sw
 assert 'if(!trustedShellAsset(response,shellPath))return Response.error()' in sw
-assert "hit&&trustedShellAsset(hit,'./index.html')&&await completeShell(cache)" in sw
+# Navigation must validate a complete, epoch-stable shell before serving HTML.
+assert "stableCacheHit(cache,'./index.html',{" in sw
+assert "requireComplete:true,allowFailedRecovery:true" in sw
+assert "if(hit&&trustedShellAsset(hit,'./index.html'))return hit;" in sw
+assert "if(recoveryInFlight||epoch!==shellEpoch)continue;" in sw
 
 # Sprint 26: unknown revisions must never be overwritten on resumed tabs.
 assert 'if(expectedPrimaryRaw===undefined)' in app
