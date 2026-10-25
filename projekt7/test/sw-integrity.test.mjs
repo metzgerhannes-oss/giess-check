@@ -15,7 +15,7 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
  const oldEntries=new Map(shell.map(path=>[new URL(path,scope).href,{old:true}]));
  versions.set(old,oldEntries);versions.set('unrelated-app',new Map());
  let waiting=0,claimed=0,networkCalls=0,putCalls=0,addAllCalls=0;
- let precacheShouldFail=failPrecache;
+ let precacheShouldFail=failPrecache,precacheFault=badPrecache;
  let releasePut;
  const putBarrier=holdPut?new Promise(resolve=>{releasePut=resolve;}):null;
  const keyOf=req=>new URL(typeof req==='string'?req:req.url,scope).href;
@@ -34,7 +34,7 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
        const mime=path==='./'||path.endsWith('.html')?'text/html':
          path.endsWith('.mjs')?'text/javascript':path.endsWith('.css')?'text/css':
          path.endsWith('.svg')?'image/svg+xml':path.endsWith('.png')?'image/png':'application/manifest+json';
-       const fault=badPrecache?.path===path?badPrecache:null;
+       const fault=precacheFault?.path===path?precacheFault:null;
        staged.set(keyOf(path),{
         ok:fault?.ok??true,status:fault?.status??200,redirected:fault?.redirected??false,
         type:fault?.type??'basic',url:fault?.url??keyOf(path),
@@ -88,6 +88,7 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
  return {
   lifecycle,request,dispatch,versions,deleted,
   setPrecacheFailure:value=>{precacheShouldFail=value;},
+  setBadPrecache:value=>{precacheFault=value;},
   releasePut:()=>releasePut?.(),
   get waiting(){return waiting;},get claimed(){return claimed;},
   get networkCalls(){return networkCalls;},get putCalls(){return putCalls;},get addAllCalls(){return addAllCalls;}
@@ -310,7 +311,8 @@ test('failed offline recovery fails closed and retains the previous shell',async
  assert.deepEqual(await sw.dispatch(sw.request('./index.html',{mode:'navigate'})),{networkError:true});
  assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
  assert.equal(sw.waiting,0);
- assert.deepEqual(sw.deleted,[]);
+ assert.deepEqual(sw.deleted,[shellVersion+'-recovery']);
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),false);
 });
 test('invalid MIME during recovery never exposes partial HTML',async()=>{
  const sw=worker({badPrecache:{path:'./app.mjs',mime:'text/html'}});
@@ -417,6 +419,45 @@ test('a delayed quota failure still delivers the trusted online response without
  const response=await pending;
  assert.equal(response.ok,true,'Quota failure must not block online usage');
  assert.equal(sw.versions.get(shellVersion).size,0,'Failed write cannot create a partial cache entry');
+});
+
+
+test('untrusted staged recovery cannot replace any existing active-shell entries',async()=>{
+ const sw=worker();
+ await sw.lifecycle('install');
+ const entries=sw.versions.get(shellVersion);
+ entries.delete(new URL('./core.mjs',scope).href);
+ const before=[...entries.entries()];
+ sw.setBadPrecache({path:'./app.mjs',mime:'text/html'});
+ assert.deepEqual(await sw.dispatch(sw.request('./index.html',{mode:'navigate'})),{networkError:true});
+ assert.deepEqual([...entries.entries()],before,'Staging must validate before touching active cache');
+ assert.equal(sw.putCalls,0,'Invalid staged response must never be promoted');
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),false,'Failed staging cache must be removed');
+ assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
+});
+
+test('successful staged recovery promotes the complete shell and removes staging',async()=>{
+ const sw=worker();
+ await sw.lifecycle('install');
+ sw.versions.get(shellVersion).delete(new URL('./core.mjs',scope).href);
+ const page=await sw.dispatch(sw.request('./index.html',{mode:'navigate'}));
+ assert.equal(page.headers.get('content-type'),'text/html');
+ assert.equal(sw.putCalls,shell.length,'Every asset must be promoted after validation');
+ assert.equal(sw.versions.get(shellVersion).size,shell.length);
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),false);
+ assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
+});
+
+test('quota failure during staged promotion fails closed without evicting old release',async()=>{
+ const sw=worker({failPut:true});
+ await sw.lifecycle('install');
+ const entries=sw.versions.get(shellVersion);
+ entries.delete(new URL('./core.mjs',scope).href);
+ const before=[...entries.entries()];
+ assert.deepEqual(await sw.dispatch(sw.request('./index.html',{mode:'navigate'})),{networkError:true});
+ assert.deepEqual([...entries.entries()],before,'Failed first promotion write preserves active entries');
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),false);
+ assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
 });
 
 test('long offline session reuses a complete shell without network or cache writes',async()=>{
