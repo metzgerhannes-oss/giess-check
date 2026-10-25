@@ -172,3 +172,20 @@ möglicherweise rettbare neue Kopie zu verdecken. Storage-Events und die Rückke
 aus einem eingefrorenen Tab prüfen diesen Zustand ebenfalls. Der Schutz ist
 Best-Effort: Browser-localStorage bietet keine atomare Mehrschlüssel-Transaktion.
 Die Regressionen verwenden ausschließlich synthetische lokale Daten.
+
+## Sprint 47: Bytegenaue Bestätigung der Offline-Promotion
+
+Eine vollständige HTTP-/MIME-Prüfung allein erkennt keine unbemerkte
+CacheStorage-Schreibverweigerung, wenn noch gültig aussehende Dateien einer
+älteren Revision vorhanden sind. Deshalb werden nach der vollständigen
+Übernahme die tatsächlich gespeicherten Antwortkörper aller Shell-Dateien
+byteweise mit dem isolierten Wiederherstellungs-Cache verglichen. Erst bei
+vollständiger Übereinstimmung darf dessen dauerhafte Sperre entfernt werden.
+Bei stumm ignorierten Schreibvorgängen, gleichartig getarnten Änderungen oder
+Eviction einzelner Staging-Dateien bleibt die Sperre erhalten; eine Navigation
+kann die vorhandene vollständige Staging-Version auch nach einem Neustart
+offline erneut übernehmen. Die Prüfung läuft nur bei einer vollständigen
+Wiederherstellung, nicht bei gewöhnlichen Cache-Treffern. Grenzen bleiben
+nicht atomare CacheStorage-Operationen, vollständige Browser-Eviction und
+fehlende physische iPhone-/Safari-Abnahme. Die Tests verwenden ausschließlich
+synthetische Antworten und keine Produktivdaten.

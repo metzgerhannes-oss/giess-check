@@ -9,7 +9,7 @@ assert.ok(shellVersion,'Offline shell version must be declared');
 const oldShellVersion='klarpunkt-shell-v'+(Number(shellVersion.split('-v').at(-1))-1);
 const scope='https://example.test/giess-check/projekt7/';
 const shell=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
-function worker({missing=null,failPrecache=false,networkResponse=null,failPut=false,failPutAt=null,badPrecache=null,holdPut=false,failDelete=false,sharedVersions=null,failPutAfterWriteAt=null}={}){
+function worker({missing=null,failPrecache=false,networkResponse=null,failPut=false,failPutAt=null,badPrecache=null,holdPut=false,failDelete=false,sharedVersions=null,failPutAfterWriteAt=null,skipPutAt=null,corruptPutAt=null,evictStageAt=null}={}){
  const handlers=new Map(),versions=sharedVersions??new Map(),deleted=[];
  const current=shellVersion,old=oldShellVersion;
  const oldEntries=new Map(shell.map(path=>[new URL(path,scope).href,{old:true}]));
@@ -52,7 +52,10 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
        staged.set(keyOf(path),{
         ok:fault?.ok??true,status:fault?.status??200,redirected:fault?.redirected??false,
         type:fault?.type??'basic',url:fault?.url??keyOf(path),
-        headers:{get:name=>fault?.headers?.[name]??(name==='content-type'?fault?.mime??mime:null)}
+        headers:{get:name=>fault?.headers?.[name]??(name==='content-type'?fault?.mime??mime:null)},
+        bodyBytes:path+':batch-'+addAllCalls,
+        clone(){return this;},
+        async arrayBuffer(){return new TextEncoder().encode(this.bodyBytes).buffer;}
        });
       }
      }
@@ -64,7 +67,13 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
      putCalls++;
      if(putBarrier)await putBarrier;
      if(putShouldFail||(failPutAt!==null&&putCalls===failPutAt))throw Error('QuotaExceededError');
-     entries.set(keyOf(req),response);
+     // Simulate silent acknowledgement, same-MIME corruption and stage
+     // eviction without throwing: all must leave promotion uncommitted.
+     if(skipPutAt!==putCalls){
+      entries.set(keyOf(req),corruptPutAt===putCalls
+       ?{...response,bodyBytes:response.bodyBytes+'-tampered'}:response);
+     }
+     if(evictStageAt===putCalls)versions.get(current+'-recovery')?.delete(keyOf('./style.css'));
      // Simulate a storage backend that persists bytes but reports a late
      // failure: successful persistence is not the same as a resolved Promise.
      if(failPutAfterWriteAt!==null&&putCalls===failPutAfterWriteAt)throw Error('Late storage failure');
@@ -907,4 +916,54 @@ test('credentialed browser navigation remains offline-capable with an anonymousl
  const page=await sw.dispatch(sw.request('./index.html',{mode:'navigate',credentials:'include',cache:'only-if-cached'}));
  assert.equal(page.headers.get('content-type'),'text/html');
  assert.equal(sw.networkCalls,0,'Offline navigation must not require a credentialed network fetch');
+});
+
+
+test('silent cache write acknowledgement cannot commit a mixed-version shell',async()=>{
+ const sw=worker({skipPutAt:1});
+ await sw.lifecycle('install');
+ const entries=sw.versions.get(shellVersion);
+ entries.delete(new URL('./core.mjs',scope).href);
+ const navigate=sw.request('./index.html',{mode:'navigate'});
+ assert.deepEqual(await sw.dispatch(navigate),{networkError:true});
+ assert.equal(entries.size,shell.length,'MIME-complete active cache can still mix versions');
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),true,'Durable fence must remain');
+ assert.equal(sw.addAllCalls,2);
+ const restored=await sw.dispatch(navigate);
+ assert.equal(restored.headers.get('content-type'),'text/html');
+ assert.equal(sw.addAllCalls,2,'Validated stage is reused without another download');
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),false);
+ assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
+});
+
+test('same-MIME tampering after a successful put fails byte verification and recovers offline after restart',async()=>{
+ const sw=worker({corruptPutAt:3});
+ await sw.lifecycle('install');
+ sw.versions.get(shellVersion).delete(new URL('./core.mjs',scope).href);
+ const navigate=sw.request('./index.html',{mode:'navigate'});
+ assert.deepEqual(await sw.dispatch(navigate),{networkError:true});
+ assert.equal(sw.versions.get(shellVersion).size,shell.length);
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),true);
+ const restarted=worker({sharedVersions:sw.versions,failPrecache:true});
+ const restored=await restarted.dispatch(navigate);
+ assert.equal(restored.headers.get('content-type'),'text/html');
+ assert.equal(restarted.addAllCalls,0,'No network restaging when a complete stage survives');
+ assert.equal(restarted.networkCalls,0);
+ assert.equal(restarted.versions.has(shellVersion+'-recovery'),false);
+});
+
+test('staging eviction during promotion cannot release the offline fence',async()=>{
+ const sw=worker({evictStageAt:shell.length});
+ await sw.lifecycle('install');
+ sw.versions.get(shellVersion).delete(new URL('./core.mjs',scope).href);
+ const navigate=sw.request('./index.html',{mode:'navigate'});
+ assert.deepEqual(await sw.dispatch(navigate),{networkError:true});
+ assert.equal(sw.versions.get(shellVersion).size,shell.length,
+  'All active entries may survive while the source stage was evicted');
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),true);
+ const restarted=worker({sharedVersions:sw.versions,failPrecache:true});
+ assert.deepEqual(await restarted.dispatch(navigate),{networkError:true},
+  'Offline restart must not trust an unverifiable promotion');
+ assert.equal(restarted.versions.has(shellVersion+'-recovery'),true);
+ assert.equal(restarted.versions.get(oldShellVersion).size,shell.length);
 });

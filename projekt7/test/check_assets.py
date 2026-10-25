@@ -157,3 +157,9 @@ assert 'if(expectedPrimaryRaw===undefined)' in app
 assert "window.addEventListener('focus',reconcileOnReturn)" in app
 assert "window.addEventListener('pageshow',reconcileOnReturn)" in app
 assert "document.addEventListener('visibilitychange'" in app
+
+# Sprint 47: promotion must compare actual bytes before releasing the durable fence.
+assert 'async function sameShellBytes(expected,stored)' in sw
+assert 'expected.clone().arrayBuffer()' in sw and 'stored.clone().arrayBuffer()' in sw
+assert 'await sameShellBytes(expected,stored)' in sw
+assert sw.index('await sameShellBytes(expected,stored)') < sw.index('await caches.delete(RECOVERY_CACHE)')
