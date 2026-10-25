@@ -51,14 +51,14 @@ test('unavailable second primary read aborts before touching either key',()=>{
  assert.deepEqual(base.dump(),before);assert.equal(writes,0);
 });
 
-test('initial backup seeding preserves a recovery copy arriving from another tab',()=>{
+test('initial backup seeding rejects a recovery copy arriving from another tab',()=>{
  const base=store(),remote=JSON.stringify(named('Remote recovery')),warnings=[];
  const racing=onNthRead(base,BACKUP_KEY,2,()=>base.setItem(BACKUP_KEY,remote));
- saveProject(racing,named('Fresh'),false,null,error=>warnings.push(error.message));
- assert.equal(JSON.parse(base.getItem(PRIMARY_KEY)).title,'Fresh');
+ assert.throws(()=>saveProject(racing,named('Fresh'),false,null,error=>warnings.push(error.message)),{code:'STORAGE_CONFLICT'});
+ assert.equal(base.getItem(PRIMARY_KEY),null,'No primary may shadow a newly arrived recovery copy');
  assert.equal(base.getItem(BACKUP_KEY),remote);
- assert.equal(warnings.length,1);
- assert.equal(racing.writes,1,'Only primary is committed by this tab');
+ assert.equal(warnings.length,0);
+ assert.equal(racing.writes,0,'This tab must not commit after a competing recovery');
 });
 
 test('archive append detects a concurrent deletion without explicit revision',()=>{
