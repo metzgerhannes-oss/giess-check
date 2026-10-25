@@ -82,7 +82,12 @@ for fg,bg in [('#1c2b3a','#ffffff'),('#536272','#ffffff'),('#a7e8d9','#1e4967'),
 
 assert 'id="reload-storage"' in html
 assert 'STORAGE_CONFLICT' in (root / "storage.mjs").read_text(encoding="utf-8")
-assert "storageEventConflicts(event.key,event.newValue,expectedPrimaryRaw,storageState==='recovered'?expectedRecoveredBackupRaw:undefined)" in app
+# Both recovered and damaged snapshots carry an observed backup revision.
+# Whitespace normalization allows multiline wiring without weakening the gate.
+app_compact=re.sub(r'\\s+','',app)
+assert "storageEventConflicts(event.key,event.newValue,expectedPrimaryRaw,storageState==='recovered'||storageState==='damaged'?expectedRecoveredBackupRaw:undefined)" in app_compact
+assert "(storageState==='recovered'||storageState==='damaged')&&expectedRecoveredBackupRaw!==undefined" in app_compact
+assert "backupRaw:backup" in (root / "storage.mjs").read_text(encoding="utf-8")
 assert "key===null" in (root / "storage.mjs").read_text(encoding="utf-8")
 assert re.search(r"^const VERSION='klarpunkt-shell-v[0-9]+';", sw, re.M)
 assert "cache.match('./index.html')" in sw, "Version-consistent navigation required"
