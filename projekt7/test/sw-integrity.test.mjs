@@ -9,7 +9,7 @@ assert.ok(shellVersion,'Offline shell version must be declared');
 const oldShellVersion='klarpunkt-shell-v'+(Number(shellVersion.split('-v').at(-1))-1);
 const scope='https://example.test/giess-check/projekt7/';
 const shell=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
-function worker({missing=null,failPrecache=false,networkResponse=null,failPut=false,failPutAt=null,badPrecache=null,holdPut=false,failDelete=false,sharedVersions=null,failPutAfterWriteAt=null,skipPutAt=null,corruptPutAt=null,evictStageAt=null}={}){
+function worker({missing=null,failPrecache=false,networkResponse=null,failPut=false,failPutAt=null,badPrecache=null,holdPut=false,failDelete=false,sharedVersions=null,failPutAfterWriteAt=null,skipPutAt=null,corruptPutAt=null,evictStageAt=null,ignoreRecoveryOpen=false}={}){
  const handlers=new Map(),versions=sharedVersions??new Map(),deleted=[];
  const current=shellVersion,old=oldShellVersion;
  const oldEntries=new Map(shell.map(path=>[new URL(path,scope).href,{old:true}]));
@@ -24,8 +24,10 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
  const keyOf=req=>new URL(typeof req==='string'?req:req.url,scope).href;
  const caches={
   open:async name=>{
-   if(!versions.has(name))versions.set(name,new Map());
-   const entries=versions.get(name);
+   // Fault injection: CacheStorage.open() resolves but the recovery cache
+   // never appears in keys(), simulating a silently non-durable fence.
+   if(!versions.has(name)&&!(ignoreRecoveryOpen&&name===current+'-recovery'))versions.set(name,new Map());
+   const entries=versions.get(name)??new Map();
    return {
     match:async req=>{
      const snapshot=entries.get(keyOf(req));
@@ -63,6 +65,7 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
      entries.clear();
      for(const [key,value] of staged)entries.set(key,value);
     },
+    delete:async req=>entries.delete(keyOf(req)),
     put:async(req,response)=>{
      putCalls++;
      if(putBarrier)await putBarrier;
@@ -1007,4 +1010,43 @@ test('same-MIME runtime corruption cannot become a trusted offline asset after r
  assert.equal(recovered.headers.get('content-type'),'text/html');
  assert.equal(restarted.versions.has(shellVersion+'-recovery'),false);
  assert.equal(restarted.versions.get(oldShellVersion).size,shell.length);
+});
+
+test('non-persistent recovery cache blocks promotion before any active writes',async()=>{
+ const sw=worker({ignoreRecoveryOpen:true});
+ await sw.lifecycle('install');
+ const entries=sw.versions.get(shellVersion);
+ entries.delete(new URL('./core.mjs',scope).href);
+ const before=[...entries.entries()];
+ assert.deepEqual(await sw.dispatch(sw.request('./index.html',{mode:'navigate'})),
+  {networkError:true});
+ assert.equal(sw.putCalls,0,'Never promote when the staging fence is not durable');
+ assert.deepEqual([...entries.entries()],before,'Active shell must remain untouched');
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),false);
+ assert.equal(sw.versions.get(oldShellVersion).size,shell.length);
+});
+
+test('runtime corruption without a persistent fence is evicted and fails closed',async()=>{
+ const sw=worker({ignoreRecoveryOpen:true,corruptPutAt:1});
+ await sw.lifecycle('install');
+ const url=new URL('./app.mjs',scope).href;
+ sw.versions.get(shellVersion).delete(url);
+ assert.deepEqual(await sw.dispatch(sw.request('./app.mjs')),{networkError:true});
+ assert.equal(sw.versions.get(shellVersion).has(url),false,
+  'Unverified runtime bytes must not survive a failed fence write');
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),false);
+ assert.deepEqual(await sw.dispatch(sw.request('./app.mjs',{cache:'only-if-cached'})),
+  {networkError:true});
+ const restarted=worker({sharedVersions:sw.versions,failPrecache:true});
+ assert.deepEqual(await restarted.dispatch(restarted.request('./index.html',{mode:'navigate'})),
+  {networkError:true},'Incomplete active cache must not become trusted after restart');
+ assert.equal(restarted.versions.get(oldShellVersion).size,shell.length);
+});
+
+test('silently ignored runtime write cannot claim success when its fence is transient',async()=>{
+ const sw=worker({ignoreRecoveryOpen:true,skipPutAt:1});
+ assert.deepEqual(await sw.dispatch(sw.request('./app.mjs')),{networkError:true});
+ assert.equal(sw.putCalls,1);
+ assert.equal(sw.versions.get(shellVersion).size,0);
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),false);
 });

@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v42';
+const VERSION='klarpunkt-shell-v43';
 const SHELL_PREFIX='klarpunkt-shell-v';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Fetch public shell bytes without browser cookies or HTTP credentials.
@@ -122,12 +122,18 @@ async function recoverShell(cache){
    recoveryFailed=false;return await cache.match('./index.html');
   }
   const staged=await caches.open(RECOVERY_CACHE);
+  // A storage backend can acknowledge open() without persisting the cache.
+  // Never touch the active shell unless its crash-surviving fence is visible.
+  if(!(await pendingPromotion()))throw new Error('Offline recovery fence was not persisted');
   // Staging is the durable fence for a potentially mixed active cache.
   // Never declare a promotion successful before this fence is confirmed gone.
   if(!(await completeShell(staged))){
    await staged.addAll(publicShellRequests());
    if(!(await completeShell(staged)))throw new Error('Incomplete offline shell in recovery staging');
   }
+  // The browser may evict the stage while addAll is running. A complete
+  // transient staging object is not evidence of a durable recovery fence.
+  if(!(await pendingPromotion()))throw new Error('Offline recovery fence vanished before promotion');
   for(const path of FILES){
    const response=await staged.match(path);
    await cache.put(path,response);
@@ -290,8 +296,14 @@ self.addEventListener('fetch',event=>{
    if(!confirmed&&(writeSucceeded||stored)){
     // Persist a recovery fence BEFORE releasing this write. A future worker
     // must not trust a metadata-complete but byte-corrupted offline shell.
-    await caches.open(RECOVERY_CACHE);
     recoveryFailed=true;
+    await caches.open(RECOVERY_CACHE);
+    if(!(await pendingPromotion())){
+     // Without a durable fence a restarted worker could trust the bad entry.
+     // Best-effort remove it, then fail closed instead of claiming success.
+     try{await cache.delete(publicRequest);}catch{}
+     throw new Error('Offline recovery fence could not be persisted');
+    }
    }
   })();
   runtimeWrites.add(writing);
