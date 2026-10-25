@@ -163,3 +163,9 @@ assert 'async function sameShellBytes(expected,stored)' in sw
 assert 'expected.clone().arrayBuffer()' in sw and 'stored.clone().arrayBuffer()' in sw
 assert 'await sameShellBytes(expected,stored)' in sw
 assert sw.index('await sameShellBytes(expected,stored)') < sw.index('await caches.delete(RECOVERY_CACHE)')
+
+# Sprint 48: runtime cache writes must verify bytes and leave a durable fence
+# if a write is silently lost or persists same-MIME corrupted content.
+assert 'if(!confirmed&&(writeSucceeded||stored))' in sw
+assert 'await caches.open(RECOVERY_CACHE)' in sw
+assert 'runtimeWrites.add(writing)' in sw

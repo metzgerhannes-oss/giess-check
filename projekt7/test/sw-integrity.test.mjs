@@ -105,7 +105,10 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
     path.endsWith('.svg')?'image/svg+xml':path.endsWith('.png')?'image/png':'application/manifest+json';
   return networkResponse?networkResponse(req):{
    ok:true,status:200,redirected:false,type:'basic',url:req.url,
-   headers:{get:name=>name==='content-type'?mime:null},clone(){return this;}
+   headers:{get:name=>name==='content-type'?mime:null},
+   bodyBytes:'runtime:'+req.url,
+   clone(){return this;},
+   async arrayBuffer(){return new TextEncoder().encode(this.bodyBytes).buffer;}
   };
  };
  runInNewContext(source,{self,caches,fetch,URL,Request,Set,Response:{error:()=>({networkError:true})}});
@@ -965,5 +968,43 @@ test('staging eviction during promotion cannot release the offline fence',async(
  assert.deepEqual(await restarted.dispatch(navigate),{networkError:true},
   'Offline restart must not trust an unverifiable promotion');
  assert.equal(restarted.versions.has(shellVersion+'-recovery'),true);
+ assert.equal(restarted.versions.get(oldShellVersion).size,shell.length);
+});
+
+test('verified runtime repair keeps the durable recovery fence absent',async()=>{
+ const sw=worker();
+ const asset=await sw.dispatch(sw.request('./app.mjs'));
+ assert.equal(asset.ok,true);
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),false);
+ assert.equal((await sw.dispatch(sw.request('./app.mjs',{cache:'only-if-cached'}))).ok,true);
+});
+
+test('silently ignored runtime write creates a restart-surviving offline fence',async()=>{
+ const sw=worker({skipPutAt:1});
+ const asset=await sw.dispatch(sw.request('./app.mjs'));
+ assert.equal(asset.ok,true,'Verified online response remains usable');
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),true);
+ assert.deepEqual(await sw.dispatch(sw.request('./app.mjs',{cache:'only-if-cached'})),{networkError:true});
+ const restarted=worker({sharedVersions:sw.versions,failPrecache:true});
+ assert.deepEqual(await restarted.dispatch(restarted.request('./index.html',{mode:'navigate'})),{networkError:true});
+ assert.equal(restarted.versions.has(shellVersion+'-recovery'),true);
+ assert.equal(restarted.versions.get(oldShellVersion).size,shell.length);
+});
+
+test('same-MIME runtime corruption cannot become a trusted offline asset after restart',async()=>{
+ const sw=worker({corruptPutAt:1});
+ await sw.lifecycle('install');
+ const appUrl=new URL('./app.mjs',scope).href;
+ sw.versions.get(shellVersion).delete(appUrl);
+ const online=await sw.dispatch(sw.request('./app.mjs'));
+ assert.equal(online.ok,true);
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),true);
+ const restarted=worker({sharedVersions:sw.versions,failPrecache:true});
+ assert.deepEqual(await restarted.dispatch(restarted.request('./app.mjs',{cache:'only-if-cached'})),{networkError:true});
+ assert.deepEqual(await restarted.dispatch(restarted.request('./index.html',{mode:'navigate'})),{networkError:true});
+ restarted.setPrecacheFailure(false);
+ const recovered=await restarted.dispatch(restarted.request('./index.html',{mode:'navigate'}));
+ assert.equal(recovered.headers.get('content-type'),'text/html');
+ assert.equal(restarted.versions.has(shellVersion+'-recovery'),false);
  assert.equal(restarted.versions.get(oldShellVersion).size,shell.length);
 });
