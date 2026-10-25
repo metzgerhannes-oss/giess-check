@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v45';
+const VERSION='klarpunkt-shell-v46';
 const SHELL_PREFIX='klarpunkt-shell-v';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Fetch public shell bytes without browser cookies, referrers, cross-origin
@@ -94,6 +94,10 @@ let recoveryInFlight=null;
 // response must never be delivered across a whole-shell promotion.
 let shellEpoch=0;
 let recoveryFailed=false;
+// If a corrupt runtime write cannot persist its recovery fence and cannot be
+// deleted, MIME-complete cache entries are not evidence of safe bytes. Keep
+// this worker in fail-closed mode until a fully verified shell is promoted.
+let unfencedWriteFailure=false;
 // Runtime asset repairs and whole-shell promotion must not write the same
 // cache concurrently. An in-flight repair may complete the shell by itself.
 const runtimeWrites=new Set();
@@ -114,6 +118,10 @@ async function stableCacheHit(cache,path,{requireComplete=false,allowFailedRecov
    if(requireComplete&&allowFailedRecovery)return null;
    throw new Error('Unfinished offline shell promotion');
   }
+  if(unfencedWriteFailure){
+   if(requireComplete&&allowFailedRecovery)return null;
+   throw new Error('Unfenced offline cache write failure');
+  }
   if(recoveryFailed&&!allowFailedRecovery)throw new Error('Offline recovery failed');
   // A failed promotion may have durably written its final entry before the
   // browser reported an error. Only a complete, epoch-stable navigation check
@@ -129,8 +137,8 @@ async function recoverShell(cache){
   recoveryInFlight=(async()=>{
    try{
   await Promise.allSettled([...runtimeWrites]);
-  if(!(await pendingPromotion())&&await completeShell(cache)){
-   recoveryFailed=false;return await cache.match('./index.html');
+  if(!unfencedWriteFailure&&!(await pendingPromotion())&&await completeShell(cache)){
+   recoveryFailed=false;unfencedWriteFailure=false;return await cache.match('./index.html');
   }
   const staged=await caches.open(RECOVERY_CACHE);
   // A storage backend can acknowledge open() without persisting the cache.
@@ -169,6 +177,7 @@ async function recoverShell(cache){
   const page=await cache.match('./index.html');
   if(!trustedShellAsset(page,'./index.html'))throw new Error('Offline entrypoint missing after promotion');
   recoveryFailed=false;
+  unfencedWriteFailure=false;
   return page;
    }catch(error){
     recoveryFailed=true;
@@ -309,7 +318,11 @@ self.addEventListener('fetch',event=>{
     // Persist a recovery fence BEFORE releasing this write. A future worker
     // must not trust a metadata-complete but byte-corrupted offline shell.
     recoveryFailed=true;
+    // Until the durable stage is observed, an acknowledged but corrupted
+    // cache entry must not be trusted by a later navigation in this worker.
+    unfencedWriteFailure=true;
     await caches.open(RECOVERY_CACHE);
+    if(await pendingPromotion())unfencedWriteFailure=false;
     if(!(await pendingPromotion())){
      // Without a durable fence a restarted worker could trust the bad entry.
      // Best-effort remove it, then fail closed instead of claiming success.

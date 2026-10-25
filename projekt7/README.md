@@ -220,3 +220,18 @@ Lesefehler, Übergröße und Revisionskonflikte brechen ohne Mutation ab.
 Die Datei kann sensible lokale Inhalte enthalten und muss sicher aufbewahrt
 werden. Vollständige Browser-Eviction und fehlende atomare Transaktionen
 bleiben technische Grenzen. Offline-Shell v45.
+
+
+## Sprint 53: Fail-closed nach nicht persistierter Offline-Schutzmarkierung
+Wenn ein Laufzeit-Cache-Schreibvorgang beschädigte Bytes hinterlässt und weder
+Schutzmarkierung noch Löschung zuverlässig gespeichert werden können, gilt ein
+vollständiger Satz MIME-korrekter Dateien **nicht** als vertrauenswürdig.
+Der aktive Service Worker sperrt dann auch scheinbar vollständige Cache-Treffer;
+erst eine vollständig nachgelesene und byteweise verifizierte Neu-Promotion
+kann den Zustand freigeben. Cache-only-Anfragen bleiben strikt offline und
+schlagen im Zweifel fehl. Synthetische Tests simulieren den doppelten
+Speicherfehler sowie die spätere erfolgreiche Reparatur. Diese Absicherung
+gilt für die Lebensdauer des betroffenen Workers; wenn der Browser zugleich
+jede persistente Schutzmarkierung und jede Cache-Löschung verweigert, kann
+ein Neustart ohne dauerhaftes Signal nicht vollständig abgesichert werden.
+Shell v46; keine Cloud-Abhängigkeiten.
