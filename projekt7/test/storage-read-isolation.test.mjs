@@ -82,9 +82,9 @@ test('explicit recovery retains readable backup and repairs primary',()=>{
  assert.equal(inspectStorage(s).project.title,'Recovered');
  assert.equal(JSON.parse(s.getItem(BACKUP_KEY)).title,'Backup');
 });
-test('first write preserves an existing backup rather than replacing it',()=>{
+test('explicitly authorized first write preserves an existing backup rather than replacing it',()=>{
  const s=faultStore();s.setItem(BACKUP_KEY,JSON.stringify(named('Older')));
- saveProject(s,named('New'));
+ saveProject(s,named('New'),true,null);
  assert.equal(JSON.parse(s.getItem(PRIMARY_KEY)).title,'New');
  assert.equal(JSON.parse(s.getItem(BACKUP_KEY)).title,'Older');
 });
