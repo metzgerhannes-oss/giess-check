@@ -394,7 +394,7 @@ function reconcileOnReturn(){
  const revision=inspectPrimaryRevision(browserStore(),expectedPrimaryRaw);
  if(storageState!=='conflict'&&(revision==='changed'||revision==='unverified'))markConflict();
  // Frozen tabs may miss backup-key storage events entirely.
- if(storageState==='recovered'&&expectedRecoveredBackupRaw!==undefined&&
+ if((storageState==='recovered'||storageState==='damaged')&&expectedRecoveredBackupRaw!==undefined&&
     inspectBackupRevision(browserStore(),expectedRecoveredBackupRaw)!=='unchanged')markConflict();
  else if(revision==='unavailable'&&unsavedGuard.isDirty()&&storageState!=='conflict'){
   status.textContent='Ungespeicherte Änderungen! Browser-Speicher derzeit nicht lesbar. Bitte JSON-Sicherung herunterladen.';
@@ -410,7 +410,8 @@ document.addEventListener('visibilitychange',()=>{
  if(document.visibilityState==='visible')reconcileOnReturn();
 });
 window.addEventListener('storage',event=>{
- if(storageEventConflicts(event.key,event.newValue,expectedPrimaryRaw,storageState==='recovered'?expectedRecoveredBackupRaw:undefined))markConflict();
+ if(storageEventConflicts(event.key,event.newValue,expectedPrimaryRaw,
+   storageState==='recovered'||storageState==='damaged'?expectedRecoveredBackupRaw:undefined))markConflict();
  if(event.key===ARCHIVE_KEY||event.key===null)renderArchive();
 });
 renderAll();
