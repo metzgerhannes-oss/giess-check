@@ -22,7 +22,9 @@ function worker({quota=false}={}){
   return {
    ok:true,status:200,redirected:false,type:'basic',url:request.url,
    headers:{get:name=>name==='content-type'?'text/javascript':null},
-   clone(){return this;}
+   bodyBytes:'public:'+request.url,
+   clone(){return this;},
+   async arrayBuffer(){return new TextEncoder().encode(this.bodyBytes).buffer;}
   };
  };
  runInNewContext(source,{self,caches,fetch,URL,Request,Set,Response:{error:()=>({networkError:true})}});

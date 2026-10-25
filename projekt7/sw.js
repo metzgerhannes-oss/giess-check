@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v41';
+const VERSION='klarpunkt-shell-v42';
 const SHELL_PREFIX='klarpunkt-shell-v';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Fetch public shell bytes without browser cookies or HTTP credentials.
@@ -267,15 +267,39 @@ self.addEventListener('fetch',event=>{
   if(!trustedShellAsset(response,shellPath))return Response.error();
   // Track and await each best-effort write: whole-shell recovery waits for
   // repairs already in flight, but quota failure still permits online use.
-  let writing;
-  try{writing=cache.put(publicRequest,response.clone());}
-  catch{
-   return recoveryInFlight||shellEpoch!==beforeFetch
-    ?promotedRuntimeAsset(cache,request,shellPath):response;
-  }
+  // A successful CacheStorage.put is not proof that the expected bytes were
+  // retained. A same-MIME corrupted runtime entry could otherwise be served
+  // offline after a worker restart. Keep verification inside runtimeWrites so
+  // full-shell promotion waits for it before touching the same cache.
+  const writing=(async()=>{
+   let writeSucceeded=false;
+   try{
+    await cache.put(publicRequest,response.clone());
+    writeSucceeded=true;
+   }catch{
+    // A quota failure may leave the online response usable; a late failure
+    // may also have persisted bytes, which still need verification.
+   }
+   if(recoveryInFlight||shellEpoch!==beforeFetch)return;
+   let stored=null;
+   try{stored=await cache.match(publicRequest);}catch{}
+   if(recoveryInFlight||shellEpoch!==beforeFetch)return;
+   let confirmed=false;
+   if(trustedShellAsset(stored,shellPath))confirmed=await sameShellBytes(response,stored);
+   if(recoveryInFlight||shellEpoch!==beforeFetch)return;
+   if(!confirmed&&(writeSucceeded||stored)){
+    // Persist a recovery fence BEFORE releasing this write. A future worker
+    // must not trust a metadata-complete but byte-corrupted offline shell.
+    await caches.open(RECOVERY_CACHE);
+    recoveryFailed=true;
+   }
+  })();
   runtimeWrites.add(writing);
   try{await writing;}
-  catch{ /* An online response is usable only if no whole-shell promotion raced. */ }
+  catch{
+   // Failure to persist the protective fence must fail closed.
+   return Response.error();
+  }
   finally{runtimeWrites.delete(writing);}
   // A recovery can start while the CacheStorage write is pending, even if
   // the network response was current when its write began. Never return that

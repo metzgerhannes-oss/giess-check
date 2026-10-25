@@ -17,7 +17,9 @@ function harness(networkHeaders={}){
  const response=(path,headers={})=>({
   ok:true,status:200,redirected:false,type:'basic',url:new URL(path,scope).href,
   headers:{get:name=>Object.hasOwn(headers,name)?headers[name]:null},
-  clone(){return this;}
+  bodyBytes:'public:'+new URL(path,scope).href,
+  clone(){return this;},
+  async arrayBuffer(){return new TextEncoder().encode(this.bodyBytes).buffer;}
  });
  const fetch=async (request,options)=>{
   fetches++;
