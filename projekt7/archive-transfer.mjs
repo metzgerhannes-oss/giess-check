@@ -1,4 +1,5 @@
 import {validateProject} from './core.mjs';
+import {PRIMARY_KEY,BACKUP_KEY} from './storage.mjs';
 import {ARCHIVE_CAP,ARCHIVE_KEY,MAX_ARCHIVE_BYTES,readArchive,assertArchiveVersion,verifyArchiveWrite} from './archive.mjs';
 
 // Independent portable archive. Import replaces only the archive key, never
@@ -86,4 +87,31 @@ export async function importArchiveBackupAsync(storage,readText,expectedRaw,appr
  // inside importArchiveBackup after confirmation settles.
  if(!(await approve(parsed.items.length)))return null;
  return importArchiveBackup(storage,parsed,expectedRaw);
+}
+
+// Read-only emergency export: exact raw values, never a valid import format.
+export const MAX_RAW_RESCUE_BYTES=2_000_000;
+export function exportRawRecovery(storage){
+ if(!storage)throw new Error('Browser-Speicher für die Notfallsicherung nicht verfügbar.');
+ const entries=[];
+ for(const key of [PRIMARY_KEY,BACKUP_KEY,ARCHIVE_KEY]){
+  const raw=storage.getItem(key);
+  if(raw!==null&&(typeof raw!=='string'||raw.length>MAX_RAW_RESCUE_BYTES)){
+   throw new Error('Rohdaten zu groß oder ungültig; vorhandene Daten bleiben unverändert.');
+  }
+  entries.push([key,raw]);
+ }
+ if(entries.every(([,raw])=>raw===null))throw new Error('Keine lokalen Rohdaten für eine Notfallsicherung vorhanden.');
+ for(const [key,raw] of entries){
+  if(storage.getItem(key)!==raw){
+   const error=new Error('Browserdaten während der Notfallsicherung geändert. Bitte erneut versuchen.');
+   error.code='STORAGE_CONFLICT';
+   throw error;
+  }
+ }
+ const payload=JSON.stringify({format:'klarpunkt-raw-rescue',version:1,raw:Object.fromEntries(entries)});
+ if(new TextEncoder().encode(payload).byteLength>MAX_RAW_RESCUE_BYTES){
+  throw new Error('Rohdaten überschreiten 2 MB; vorhandene Daten bleiben unverändert.');
+ }
+ return payload;
 }

@@ -4,7 +4,7 @@ import {createHistory} from './history.mjs';
 import {createUnsavedGuard} from './unsaved.mjs';
 import {readArchive,addSnapshot,removeSnapshot,ARCHIVE_CAP,ARCHIVE_KEY} from './archive.mjs';
 import {serializeBackup,parseBackupText,MAX_BACKUP_BYTES} from './backup.mjs';
-import {serializeArchiveBackup,importArchiveBackupAsync,MAX_ARCHIVE_FILE_BYTES} from './archive-transfer.mjs';
+import {serializeArchiveBackup,importArchiveBackupAsync,exportRawRecovery,MAX_ARCHIVE_FILE_BYTES} from './archive-transfer.mjs';
 
 const byId=id=>document.getElementById(id);
 const status=byId('save-status');
@@ -22,6 +22,7 @@ let storageState=initial.state;
 let expectedPrimaryRaw=initial.primaryRaw;
 let expectedRecoveredBackupRaw=initial.backupRaw;
 let expectedArchiveRaw=undefined;
+let archiveState='new';
 let idCounter=0;
 let resultAnnouncementTimer;
 
@@ -31,9 +32,13 @@ function load(){
  catch{return inspectStorage(null);}
 }
 function updateHistoryButtons(){byId('undo').disabled=!history.canUndo();byId('redo').disabled=!history.canRedo();}
+function updateRescueAvailability(){
+ byId('rescue-raw').hidden=!(storageState==='damaged'||storageState==='recovered'||storageState==='conflict'||archiveState==='damaged');
+}
 function markConflict(){
  storageState='conflict';
  byId('reload-storage').hidden=false;
+ updateRescueAvailability();
  status.textContent='Anderer Tab hat Browserdaten geändert. Dieser Tab überschreibt nichts. Bitte erst Datei-Sicherung speichern oder den aktuellen Browserstand laden.';
 }
 function save(record=true){
@@ -58,6 +63,7 @@ function save(record=true){
   expectedPrimaryRaw=JSON.stringify(clean);
   expectedRecoveredBackupRaw=undefined;
   storageState='ok';
+  updateRescueAvailability();
   unsavedGuard.setDirty(false);
   status.textContent=backupWarning
    ?'Aktueller Stand gespeichert, aber zusätzliche lokale Sicherung konnte nicht aktualisiert werden. Bitte eine JSON-Datei sichern.'
@@ -74,6 +80,7 @@ function replaceDamagedStorage(){
  if(storageState!=='damaged')return true;
  if(!confirm('Die bisher gespeicherten Daten sind beschädigt. Mit dem Fortfahren werden die beschädigten Daten ersetzt. Nur fortfahren, wenn du eine verfügbare Sicherung geprüft hast.'))return false;
  storageState='recovered';
+ updateRescueAvailability();
  return true;
 }
 function startupStatus(){
@@ -299,6 +306,8 @@ byId('import-file').addEventListener('change',async event=>{
 });
 function renderArchive(){
  const list=byId('archive-list'),store=browserStore(),state=readArchive(store);
+ archiveState=state.state;
+ updateRescueAvailability();
  expectedArchiveRaw=state.raw;
  list.replaceChildren();
  const saveButton=byId('archive-save');
@@ -352,6 +361,17 @@ byId('archive-export').addEventListener('click',()=>{
   status.textContent='Archivdatei erstellt. Bitte außerhalb des Browsers aufbewahren.';
  }catch(err){status.textContent=err?.message||'Archiv konnte nicht exportiert werden.';}
 });
+byId('rescue-raw').addEventListener('click',()=>{
+ try{
+  const data=exportRawRecovery(browserStore());
+  const url=URL.createObjectURL(new Blob([data],{type:'application/json'}));
+  const link=make('a');link.href=url;
+  link.download='klarpunkt-notfall-rohdaten-'+new Date().toISOString().slice(0,10)+'.json';
+  document.body.append(link);link.click();link.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+  status.textContent='Browser-Rohdaten gesichert. Nur für manuelle Rettung, nicht direkt importierbar. Datei sicher aufbewahren.';
+ }catch(err){status.textContent=err?.message||'Notfallsicherung nicht möglich. Browserdaten unverändert.';}
+});
 byId('archive-import').addEventListener('click',()=>byId('archive-import-file').click());
 byId('archive-import-file').addEventListener('change',async event=>{
  const file=event.target.files?.[0];event.target.value='';
@@ -382,6 +402,7 @@ byId('reload-storage').addEventListener('click',()=>{
  expectedPrimaryRaw=fresh.primaryRaw;
  expectedRecoveredBackupRaw=fresh.backupRaw;
  byId('reload-storage').hidden=true;
+ updateRescueAvailability();
  renderAll();
  updateHistoryButtons();
  status.textContent=fresh.state==='damaged'
