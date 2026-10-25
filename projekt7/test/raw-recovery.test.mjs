@@ -53,7 +53,7 @@ test('concurrent changes during double-read abort inconsistent rescue',()=>{
 test('oversized raw entry and escaped JSON payload are rejected read-only',()=>{
  const huge=store([[PRIMARY_KEY,'x'.repeat(MAX_RAW_RESCUE_BYTES+1)]]);
  assert.throws(()=>exportRawRecovery(huge),/zu groß/);
- const escaped=store([[PRIMARY_KEY,'\\u0000'.repeat(MAX_RAW_RESCUE_BYTES/2)]]);
+ const escaped=store([[PRIMARY_KEY,String.fromCharCode(0).repeat(MAX_RAW_RESCUE_BYTES/2)]]);
  assert.throws(()=>exportRawRecovery(escaped),/2 MB/);
  assert.equal(huge.writes,0);assert.equal(escaped.writes,0);
 });
