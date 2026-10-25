@@ -53,16 +53,21 @@ export function saveProject(storage,project,override=false,expectedPrimaryRaw=un
  const nextRaw=JSON.stringify(clean);
  if(new TextEncoder().encode(nextRaw).byteLength>MAX_BACKUP_BYTES)throw new Error('Projekt überschreitet die sichere Speichergröße.');
  let backupRaw=null;
- let seedBackup=false;
+ let expectedBackupRaw=undefined;
+ let backupReadError=null;
  if(last){
-  // A valid primary is sufficient to produce a recovery copy. Never require
-  // permission to read an optional backup before committing valid active data.
+  // A valid primary is authoritative. Failure to read the optional recovery
+  // key must not prevent saving it; instead warn and leave the backup alone.
   backupRaw=JSON.stringify(last);
+  try{expectedBackupRaw=storage.getItem(BACKUP_KEY);}
+  catch(error){backupReadError=error;}
  }else{
-  // No valid primary: read the existing backup before any write. If access is
-  // denied, do not hide a potentially recoverable copy behind a new primary.
+  // Without a valid primary, a denied backup read could hide recoverable data.
   const previousBackup=storage.getItem(BACKUP_KEY);
-  if(current===null&&previousBackup===null){backupRaw=nextRaw;seedBackup=true;}
+  if(current===null&&previousBackup===null){
+   backupRaw=nextRaw;
+   expectedBackupRaw=previousBackup;
+  }
  }
  // A second read narrows the inter-tab race window. A revision observed during
  // backup preparation must never be silently replaced by this tab.
@@ -82,26 +87,36 @@ export function saveProject(storage,project,override=false,expectedPrimaryRaw=un
   error.code='STORAGE_CONFLICT';
   throw error;
  }
+ // A second tab can replace the just-verified primary before we touch the
+ // optional backup. Never report a lost primary write as a successful save.
+ function assertOwnPrimary(){
+  if(storage.getItem(PRIMARY_KEY)!==nextRaw){
+   const error=new Error('Browserstand wurde während der Sicherung von einem anderen Tab geändert.');
+   error.code='STORAGE_CONFLICT';
+   throw error;
+  }
+ }
+ assertOwnPrimary();
  if(backupRaw!==null){
   try{
-   // When seeding an empty store, preserve a recovery copy another tab may
-   // have written since the initial read. Primary is already committed.
-   if(seedBackup&&storage.getItem(BACKUP_KEY)!==null){
+   if(backupReadError)throw backupReadError;
+   // Do not overwrite another tab's newer recovery copy. This is a best-effort
+   // revision guard; localStorage cannot atomically compare and write two keys.
+   if(storage.getItem(BACKUP_KEY)!==expectedBackupRaw){
     throw new Error('Zusätzliche Sicherung wurde zwischenzeitlich geändert.');
    }
    storage.setItem(BACKUP_KEY,backupRaw);
-   // The backup is optional, but a silent failed write must be surfaced as a
-   // reduced-redundancy warning rather than claimed as a durable recovery copy.
    if(storage.getItem(BACKUP_KEY)!==backupRaw){
     throw new Error('Zusätzliche Sicherung konnte nicht bestätigt werden.');
    }
   }catch(error){
-   // Active data is saved; the previous backup is unchanged.
-   // A warning listener must never turn an already committed primary write
-   // into an apparent failure (which could trigger a destructive retry).
+   // The confirmed primary remains authoritative. An optional-backup warning
+   // must not turn an already committed primary into a destructive retry.
    try{if(typeof onBackupFailure==='function')onBackupFailure(error);}catch{}
   }
  }
+ // Catch primary replacements during the optional backup write as well.
+ assertOwnPrimary();
  return clean;
 }
 

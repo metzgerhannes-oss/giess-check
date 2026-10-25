@@ -24,14 +24,18 @@ test('valid primary loads even when backup read is forbidden',()=>{
  assert.deepEqual(s.reads.slice(before),[PRIMARY_KEY]);
 });
 test('valid primary can be saved despite inaccessible optional backup verification',()=>{
- const s=faultStore();saveProject(s,named('A'));saveProject(s,named('B'));
+ const s=faultStore(),warnings=[];
+ saveProject(s,named('A'));saveProject(s,named('B'));
+ const originalBackup=s.getItem(BACKUP_KEY);
  s.blockRead(BACKUP_KEY);
- const before=s.reads.length,expected=s.getItem(PRIMARY_KEY);
- saveProject(s,named('C'),false,expected);
- assert.deepEqual(s.reads.slice(before+1),[PRIMARY_KEY,PRIMARY_KEY,PRIMARY_KEY,BACKUP_KEY]);
+ const expected=s.getItem(PRIMARY_KEY);
+ saveProject(s,named('C'),false,expected,error=>warnings.push(error.message));
  assert.equal(JSON.parse(s.getItem(PRIMARY_KEY)).title,'C');
+ assert.deepEqual(warnings,['SecurityError: '+BACKUP_KEY],
+  'Unreadable optional backup must be reported as reduced redundancy');
  s.unblockRead(BACKUP_KEY);
- assert.equal(JSON.parse(s.getItem(BACKUP_KEY)).title,'B');
+ assert.equal(s.getItem(BACKUP_KEY),originalBackup,
+  'Unverified backup must not be overwritten by a successful primary save');
 });
 test('valid primary is authoritative even if backup contains malformed JSON',()=>{
  const s=faultStore();saveProject(s,named('Active'));s.setItem(BACKUP_KEY,'{damaged');
