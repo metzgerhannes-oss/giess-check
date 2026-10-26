@@ -4,7 +4,7 @@ import {createHistory} from './history.mjs';
 import {createUnsavedGuard} from './unsaved.mjs';
 import {readArchive,addSnapshot,removeSnapshot,ARCHIVE_CAP,ARCHIVE_KEY} from './archive.mjs';
 import {serializeBackup,parseBackupText,MAX_BACKUP_BYTES} from './backup.mjs';
-import {serializeArchiveBackup,importArchiveBackupAsync,exportRawRecovery,MAX_ARCHIVE_FILE_BYTES} from './archive-transfer.mjs';
+import {serializeArchiveBackup,importArchiveBackupAsync,mergeArchiveBackupAsync,exportRawRecovery,MAX_ARCHIVE_FILE_BYTES} from './archive-transfer.mjs';
 
 const byId=id=>document.getElementById(id);
 const status=byId('save-status');
@@ -388,6 +388,26 @@ byId('archive-import-file').addEventListener('change',async event=>{
   else alert('Archiv konnte nicht eingelesen werden: '+(err?.message||'ungültige Datei'));
  }
 });
+
+byId('archive-merge').addEventListener('click',()=>byId('archive-merge-file').click());
+byId('archive-merge-file').addEventListener('change',async event=>{
+ const file=event.target.files?.[0];event.target.value='';
+ if(!file)return;
+ if(file.size>MAX_ARCHIVE_FILE_BYTES){alert('Archivdatei zu groß (maximal 350 KB).');return;}
+ const baseline=expectedArchiveRaw;
+ try{
+  const added=await mergeArchiveBackupAsync(browserStore(),()=>file.text(),baseline,
+   (count,total)=>confirm(count+' neue Archivstände hinzufügen (danach '+total+' von '+ARCHIVE_CAP+')? Bestehende Stände und der aktuelle Arbeitsstand bleiben erhalten.'));
+  if(added===null)return;
+  renderArchive();
+  status.textContent=added===0?'Keine neuen Archivstände – bestehende Daten unverändert.':
+   added+' Archivstände hinzugefügt. Bestehende Stände und Arbeitsstand erhalten.';
+ }catch(err){
+  if(err?.code==='ARCHIVE_CONFLICT'){renderArchive();status.textContent='Archiv inzwischen geändert. Liste aktualisiert; bitte erneut versuchen.';}
+  else alert('Archiv konnte nicht zusammengeführt werden: '+(err?.message||'ungültige Datei'));
+ }
+});
+
 byId('reload-storage').addEventListener('click',()=>{
  if(!confirm('Den neuesten Browserstand laden? Nicht gespeicherte Änderungen in diesem Tab gehen verloren. Speichere sie bei Bedarf zuerst als JSON-Datei.'))return;
  const fresh=load();

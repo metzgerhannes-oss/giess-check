@@ -89,6 +89,67 @@ export async function importArchiveBackupAsync(storage,readText,expectedRaw,appr
  return importArchiveBackup(storage,parsed,expectedRaw);
 }
 
+
+function prepareArchiveMerge(existing,incoming){
+ const merged=normalizeItems(existing),newItems=normalizeItems(incoming);
+ const byId=new Map(merged.map(item=>[item.id,item]));
+ let added=0;
+ for(const item of newItems){
+  const previous=byId.get(item.id);
+  if(previous&&JSON.stringify(previous)===JSON.stringify(item))continue;
+  let id=item.id;
+  if(previous){
+   // Preserve both entries when an imported ID names different contents.
+   let counter=0;
+   do{
+    const suffix='_'+(++counter).toString(36);
+    id='s'+item.id.slice(1,39-1-suffix.length)+suffix;
+   }while(byId.has(id));
+  }
+  const entry=id===item.id?item:{...item,id};
+  merged.push(entry);byId.set(id,entry);added++;
+ }
+ if(merged.length>ARCHIVE_CAP)throw new Error('Zusammenführung überschreitet 12 Archivstände; nichts wurde überschrieben.');
+ merged.sort((a,b)=>b.createdAt-a.createdAt);
+ const payload=JSON.stringify({version:1,items:merged});
+ if(byteSize(payload)>MAX_ARCHIVE_BYTES)throw new Error('Zusammenführung überschreitet 350 KB; nichts wurde überschrieben.');
+ return {added,total:merged.length,payload};
+}
+// Non-destructive merge: validate and preflight before a single atomic key
+// replacement. The expected revision is rechecked immediately before writing.
+export function mergeArchiveBackup(storage,parsed,expectedRaw=undefined){
+ if(!storage)throw new Error('Browser-Speicher nicht verfügbar.');
+ const state=readArchive(storage);
+ if(state.state==='damaged'||state.state==='unavailable')throw new Error('Vorhandenes Archiv beschädigt oder nicht verfügbar; nichts wurde überschrieben.');
+ const baseline=expectedRaw===undefined?state.raw:expectedRaw;
+ if(state.raw!==baseline){
+  const error=new Error('Archiv wurde in einem anderen Tab geändert.');
+  error.code='ARCHIVE_CONFLICT';throw error;
+ }
+ if(!parsed||parsed.version!==1)throw new Error('Ungültiges Archivformat.');
+ const plan=prepareArchiveMerge(state.items,parsed.items);
+ assertArchiveVersion(storage,baseline);
+ if(plan.added===0)return 0;
+ storage.setItem(ARCHIVE_KEY,plan.payload);
+ verifyArchiveWrite(storage,plan.payload);
+ return plan.added;
+}
+export async function mergeArchiveBackupAsync(storage,readText,expectedRaw,approve){
+ if(!storage)throw new Error('Browser-Speicher nicht verfügbar.');
+ const initial=readArchive(storage);
+ if(initial.state==='damaged'||initial.state==='unavailable')throw new Error('Vorhandenes Archiv beschädigt oder nicht verfügbar; nichts wurde überschrieben.');
+ if(expectedRaw===undefined||initial.raw!==expectedRaw){
+  const error=new Error('Archiv wurde in einem anderen Tab geändert.');
+  error.code='ARCHIVE_CONFLICT';throw error;
+ }
+ const parsed=parseArchiveBackup(await readText());
+ const preview=prepareArchiveMerge(initial.items,parsed.items);
+ assertArchiveVersion(storage,expectedRaw);
+ if(preview.added===0)return 0;
+ if(!(await approve(preview.added,preview.total)))return null;
+ return mergeArchiveBackup(storage,parsed,expectedRaw);
+}
+
 // Read-only emergency export: exact raw values, never a valid import format.
 export const MAX_RAW_RESCUE_BYTES=2_000_000;
 export function exportRawRecovery(storage){

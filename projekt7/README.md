@@ -235,3 +235,7 @@ gilt für die Lebensdauer des betroffenen Workers; wenn der Browser zugleich
 jede persistente Schutzmarkierung und jede Cache-Löschung verweigert, kann
 ein Neustart ohne dauerhaftes Signal nicht vollständig abgesichert werden.
 Shell v46; keine Cloud-Abhängigkeiten.
+
+## Sprint 54: Nicht-destruktive Archiv-Zusammenführung
+
+Zusätzlich zum ausdrücklich bestätigten Archiv-Ersatz können portable Archivstände jetzt zusammengeführt werden. Vorhandene Einträge bleiben erhalten; exakte Dubletten werden nicht erneut geschrieben und bei ID-Kollisionen mit anderem Inhalt bleiben beide Stände unter unterschiedlichen gültigen IDs bestehen. Kapazitäts-/Byte-Grenzen, Quota-Fehler und konkurrierende Tab-Revisionen werden vor bzw. nach dem atomaren Einzelkey-Schreiben geprüft. Ein asynchrones Bestätigungsfenster kann keine ungeprüften Änderungen freigeben. Der aktive Arbeitsstand und seine Sicherung werden nie verändert. Sämtliche Regressionen nutzen synthetische Daten; localStorage hat weiterhin keine atomare Compare-and-Swap-Operation. Offline-Shell v47.

@@ -93,7 +93,8 @@ assert re.search(r"^const VERSION='klarpunkt-shell-v[0-9]+';", sw, re.M)
 assert "cache.match('./index.html')" in sw, "Version-consistent navigation required"
 assert "caches.open(VERSION).then(async cache=>" in sw, "Do not mix caches across apps"
 
-assert 'id="archive-export"' in html and 'id="archive-import"' in html
+assert 'id="archive-export"' in html and 'id="archive-import"' in html and 'id="archive-merge"' in html
+assert 'id="archive-merge-file"' in html and "mergeArchiveBackupAsync" in app
 assert "from './archive-transfer.mjs'" in app
 
 assert "from './unsaved.mjs'" in app
