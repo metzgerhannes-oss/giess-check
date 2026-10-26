@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v47';
+const VERSION='klarpunkt-shell-v48';
 const SHELL_PREFIX='klarpunkt-shell-v';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Fetch public shell bytes without browser cookies, referrers, cross-origin
