@@ -18,7 +18,8 @@ export function readArchive(storage){
   if(!parsed || parsed.version!==1 || !Array.isArray(parsed.items) || parsed.items.length>ARCHIVE_CAP)throw new Error('Invalid archive');
   const seen=new Set();
   const items=parsed.items.map(item=>{
-   if(!item || !/^s[a-z0-9_]{1,39}$/.test(item.id) || seen.has(item.id) ||
+   if(!item || typeof item!=='object' || Array.isArray(item) || typeof item.id!=='string' ||
+       !/^s[a-z0-9_]{1,39}$/.test(item.id) || seen.has(item.id) ||
        !Number.isSafeInteger(item.createdAt) || item.createdAt<1)throw new Error('Invalid archive entry');
    seen.add(item.id);
    return {id:item.id,createdAt:item.createdAt,project:validateProject(item.project)};
@@ -38,7 +39,10 @@ export function assertArchiveVersion(storage,expectedRaw){
 // A successful setItem call is not sufficient evidence of persistence when
 // another tab races or a storage adapter silently drops the write.
 export function verifyArchiveWrite(storage,payload){
- if(storage.getItem(ARCHIVE_KEY)!==payload){
+ // Preserve a denied storage read as an error, and validate the exact
+ // same observed bytes without a second non-atomic storage read.
+ const observed=storage.getItem(ARCHIVE_KEY);
+ if(observed!==payload||readArchive({getItem:()=>observed}).state!=='ok'){
   const error=new Error('Archivspeicherung konnte nicht bestätigt werden.');
   error.code='ARCHIVE_CONFLICT';
   throw error;

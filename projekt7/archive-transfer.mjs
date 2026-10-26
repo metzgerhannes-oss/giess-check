@@ -9,8 +9,10 @@ const byteSize=value=>new TextEncoder().encode(value).byteLength;
 function normalizeItems(items){
  if(!Array.isArray(items)||items.length>ARCHIVE_CAP)throw new Error('Unzulässige Anzahl an Archivständen.');
  const ids=new Set();
- return items.map(item=>{
-  if(!item||typeof item!=='object'||typeof item.id!=='string'||
+ // Array.from visits sparse holes: Array.map would silently skip them and
+ // JSON.stringify would later turn them into null, corrupting the archive.
+ return Array.from(items,item=>{
+  if(!item||typeof item!=='object'||Array.isArray(item)||typeof item.id!=='string'||
      !/^s[a-z0-9_]{1,39}$/.test(item.id)||ids.has(item.id)||
      !Number.isSafeInteger(item.createdAt)||item.createdAt<1){
    throw new Error('Ungültiger Archivstand.');
