@@ -326,8 +326,13 @@ self.addEventListener('fetch',event=>{
   if(recoveryInFlight||shellEpoch!==beforeFetch){
    return promotedRuntimeAsset(cache,request,shellPath);
   }
-  // Apply precache MIME, origin and redirect checks to runtime repairs too.
-  if(!trustedShellAsset(response,shellPath))return Response.error();
+  // Runtime network bytes need the same trust boundary as cached shell
+  // bytes. Reject empty, unreadable and oversized bodies BEFORE CacheStorage
+  // writes or online delivery. Otherwise a bad 200 could poison an offline
+  // release, trigger a needless recovery fence, or appear successful online.
+  if(!trustedShellAsset(response,shellPath)||!(await trustedShellBodySize(response))){
+   return Response.error();
+  }
   // Track and await each best-effort write: whole-shell recovery waits for
   // repairs already in flight, but quota failure still permits online use.
   // A successful CacheStorage.put is not proof that the expected bytes were
