@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v49';
+const VERSION='klarpunkt-shell-v50';
 const SHELL_PREFIX='klarpunkt-shell-v';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Fetch public shell bytes without browser cookies, referrers, cross-origin
@@ -150,6 +150,17 @@ async function recoverShell(cache){
   // Staging is the durable fence for a potentially mixed active cache.
   // Never declare a promotion successful before this fence is confirmed gone.
   if(!(await completeShell(staged))){
+   // An earlier interrupted addAll may leave stale MIME-correct bytes.
+   // Clear and verify all partial entries before refetching a full shell.
+   // Keep the staging cache itself as the durable promotion fence.
+   for(const path of FILES){
+    if(await staged.match(path)){
+     if(!(await staged.delete(path))||await staged.match(path)){
+      throw new Error('Incomplete offline staging could not be cleared');
+     }
+    }
+   }
+   if(!(await pendingPromotion()))throw new Error('Offline recovery fence vanished during staging reset');
    await staged.addAll(publicShellRequests());
    if(!(await completeShell(staged)))throw new Error('Incomplete offline shell in recovery staging');
   }

@@ -9,7 +9,7 @@ assert.ok(shellVersion,'Offline shell version must be declared');
 const oldShellVersion='klarpunkt-shell-v'+(Number(shellVersion.split('-v').at(-1))-1);
 const scope='https://example.test/giess-check/projekt7/';
 const shell=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
-function worker({missing=null,failPrecache=false,networkResponse=null,failPut=false,failPutAt=null,badPrecache=null,holdPut=false,failDelete=false,sharedVersions=null,failPutAfterWriteAt=null,skipPutAt=null,corruptPutAt=null,evictStageAt=null,ignoreRecoveryOpen=false,failEntryDelete=false,workerSource=source,version=shellVersion}={}){
+function worker({missing=null,failPrecache=false,networkResponse=null,failPut=false,failPutAt=null,badPrecache=null,holdPut=false,failDelete=false,sharedVersions=null,failPutAfterWriteAt=null,skipPutAt=null,corruptPutAt=null,evictStageAt=null,ignoreRecoveryOpen=false,failEntryDelete=false,silentEntryDelete=false,workerSource=source,version=shellVersion}={}){
  const handlers=new Map(),versions=sharedVersions??new Map(),deleted=[];
  const current=version,old='klarpunkt-shell-v'+(Number(version.split('-v').at(-1))-1);
  const oldEntries=new Map(shell.map(path=>[new URL(path,scope).href,{old:true}]));
@@ -70,7 +70,7 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
      entries.clear();
      for(const [key,value] of staged)entries.set(key,value);
     },
-    delete:async req=>failEntryDeleteNow?false:entries.delete(keyOf(req)),
+    delete:async req=>failEntryDeleteNow?false:silentEntryDelete?true:entries.delete(keyOf(req)),
     put:async(req,response)=>{
      putCalls++;
      if(putBarrier)await putBarrier;
@@ -1187,4 +1187,58 @@ test('failed next-version installation preserves old offline cache',async()=>{
  assert.equal(prior.bodyBytes.includes(shellVersion),true);
  assert.equal(old.networkCalls,0);
  assert.equal(next.versions.get(shellVersion).size,shell.length);
+});
+
+async function incompleteRecoveryFixture(options={}){
+ const installed=worker();
+ await installed.lifecycle('install');
+ const versions=installed.versions;
+ const appKey=new URL('./app.mjs',scope).href;
+ const coreKey=new URL('./core.mjs',scope).href;
+ const stale={...versions.get(shellVersion).get(coreKey),bodyBytes:'stale-stage-byte-revision'};
+ versions.get(shellVersion).delete(appKey);
+ versions.set(shellVersion+'-recovery',new Map([[coreKey,stale]]));
+ return {sw:worker({sharedVersions:versions,...options}),versions,appKey,coreKey,stale};
+}
+test('interrupted partial stage cannot silently reuse stale assets after an incomplete refetch',async()=>{
+ const {sw,versions,appKey,coreKey,stale}=await incompleteRecoveryFixture({missing:'./core.mjs'});
+ const result=await sw.dispatch(sw.request('./index.html',{mode:'navigate'}));
+ assert.deepEqual(result,{networkError:true});
+ assert.equal(sw.addAllCalls,1);
+ assert.equal(sw.putCalls,0,'Active shell must not be touched by a mixed stage');
+ assert.equal(versions.get(shellVersion).has(appKey),false);
+ assert.notEqual(versions.get(shellVersion+'-recovery').get(coreKey),stale);
+ assert.equal(versions.has(shellVersion+'-recovery'),true,'Recovery fence must survive failure');
+});
+test('incomplete staging reset fails closed when Cache.delete refuses an existing entry',async()=>{
+ const {sw,versions,appKey,coreKey,stale}=await incompleteRecoveryFixture({
+  missing:'./core.mjs',failEntryDelete:true
+ });
+ assert.deepEqual(await sw.dispatch(sw.request('./index.html',{mode:'navigate'})),{networkError:true});
+ assert.equal(sw.addAllCalls,0,'No network refetch before confirmed cleanup');
+ assert.equal(sw.putCalls,0);
+ assert.equal(versions.get(shellVersion).has(appKey),false);
+ assert.equal(versions.get(shellVersion+'-recovery').get(coreKey),stale);
+});
+test('a lying staging delete cannot clear the durable fence or promote mixed bytes',async()=>{
+ const {sw,versions,appKey,coreKey,stale}=await incompleteRecoveryFixture({
+  missing:'./core.mjs',silentEntryDelete:true
+ });
+ assert.deepEqual(await sw.dispatch(sw.request('./index.html',{mode:'navigate'})),{networkError:true});
+ assert.equal(sw.addAllCalls,0);
+ assert.equal(sw.putCalls,0);
+ assert.equal(versions.get(shellVersion).has(appKey),false);
+ assert.equal(versions.get(shellVersion+'-recovery').get(coreKey),stale);
+});
+test('an incomplete stage can be reset and safely promoted when all fresh assets arrive',async()=>{
+ const {sw,versions,appKey,coreKey,stale}=await incompleteRecoveryFixture();
+ const page=await sw.dispatch(sw.request('./index.html',{mode:'navigate'}));
+ assert.equal(page?.url,new URL('./index.html',scope).href);
+ assert.equal(sw.addAllCalls,1);
+ assert.equal(sw.putCalls,shell.length);
+ assert.equal(versions.get(shellVersion).has(appKey),true);
+ assert.notEqual(versions.get(shellVersion).get(coreKey).bodyBytes,stale.bodyBytes);
+ assert.equal(versions.has(shellVersion+'-recovery'),false);
+ const offline=await sw.dispatch(sw.request('./app.mjs',{cache:'only-if-cached'}));
+ assert.equal(offline?.url,new URL('./app.mjs',scope).href);
 });
