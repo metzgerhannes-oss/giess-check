@@ -263,3 +263,19 @@ Nachladungen, verweigerte und vorgetäuschte Löschungen sowie erfolgreiche
 Wiederaufnahme mit anschließender Offline-Nutzung. Shell-Version v50.
 Browserseitige Eviction und nicht atomare CacheStorage-Transaktionen bleiben
 technische Grenzen.
+
+## Sprint 60: Byteintegrität der Offline-Shell
+
+Auch eine MIME-korrekte, vollständige HTTP-200-Antwort kann einen leeren,
+zu großen oder unlesbaren Antwortkörper enthalten. Installation, Aktivierung,
+Navigation und vollständige Wiederherstellung prüfen nun die tatsächliche
+Lesbarkeit und Größe aller Shell-Dateien (maximal 2 MiB je Datei, 8 MiB
+insgesamt). Statische Cache-Treffer werden ebenfalls vor Auslieferung
+auf lesbare, nicht leere Bytes geprüft. Ein beschädigter Treffer wird bei
+Cache-only-Anfragen nicht ausgeliefert; bei Navigation ist nur eine vollständig
+validierte Neu-Promotion zulässig. Sieben neue synthetische Regressionen
+prüfen Installation, Aktivierung, Cache-only, Wiederherstellung und defektes
+Staging. Shell v51. Die Prüfung kann ohne signierte Build-Hashes keine
+inhaltlich veränderten, aber formal gültigen Bytes erkennen. Browser-Eviction,
+nicht atomare CacheStorage-Operationen und physische iPhone-/Safari-Abnahme
+bleiben technische Grenzen.

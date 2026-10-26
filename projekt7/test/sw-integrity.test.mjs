@@ -60,9 +60,12 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
         ok:fault?.ok??true,status:fault?.status??200,redirected:fault?.redirected??false,
         type:fault?.type??'basic',url:fault?.url??keyOf(path),
         headers:{get:name=>fault?.headers?.[name]??(name==='content-type'?fault?.mime??mime:null)},
-        bodyBytes:path+':'+current+':batch-'+addAllCalls,
+        bodyBytes:fault?.bodyBytes??path+':'+current+':batch-'+addAllCalls,
         clone(){return this;},
-        async arrayBuffer(){return new TextEncoder().encode(this.bodyBytes).buffer;}
+        async arrayBuffer(){
+         if(fault?.failBodyRead)throw Error('Body read denied');
+         return new TextEncoder().encode(this.bodyBytes).buffer;
+        }
        });
       }
      }
@@ -1241,4 +1244,69 @@ test('an incomplete stage can be reset and safely promoted when all fresh assets
  assert.equal(versions.has(shellVersion+'-recovery'),false);
  const offline=await sw.dispatch(sw.request('./app.mjs',{cache:'only-if-cached'}));
  assert.equal(offline?.url,new URL('./app.mjs',scope).href);
+});
+
+
+test('installation refuses a MIME-correct empty asset without claiming a partial shell',async()=>{
+ const sw=worker({badPrecache:{path:'./app.mjs',bodyBytes:''}});
+ await assert.rejects(sw.lifecycle('install'),/Incomplete offline shell/);
+ assert.equal(sw.waiting,0);
+ assert.equal(sw.versions.has(oldShellVersion),true);
+ assert.deepEqual(sw.deleted,[]);
+});
+test('installation refuses a MIME-correct oversized asset before activation',async()=>{
+ const sw=worker({badPrecache:{path:'./app.mjs',bodyBytes:'x'.repeat(2*1024*1024+1)}});
+ await assert.rejects(sw.lifecycle('install'),/Incomplete offline shell/);
+ assert.equal(sw.waiting,0);
+ assert.equal(sw.versions.has(oldShellVersion),true);
+});
+test('installation refuses an unreadable cached body despite valid HTTP metadata',async()=>{
+ const sw=worker({badPrecache:{path:'./app.mjs',failBodyRead:true}});
+ await assert.rejects(sw.lifecycle('install'),/Incomplete offline shell/);
+ assert.equal(sw.waiting,0);
+ assert.equal(sw.versions.has(oldShellVersion),true);
+});
+test('activation rejects a newly unreadable asset and preserves the previous release',async()=>{
+ const sw=worker();await sw.lifecycle('install');
+ const asset=sw.versions.get(shellVersion).get(new URL('./app.mjs',scope).href);
+ asset.arrayBuffer=async()=>{throw Error('Evicted body');};
+ await assert.rejects(sw.lifecycle('activate'),/Incomplete offline shell/);
+ assert.equal(sw.claimed,0);
+ assert.equal(sw.versions.has(oldShellVersion),true);
+ assert.deepEqual(sw.deleted,[]);
+});
+test('cache-only static request never serves an empty cached module or contacts network',async()=>{
+ const sw=worker();await sw.lifecycle('install');
+ sw.versions.get(shellVersion).get(new URL('./app.mjs',scope).href).bodyBytes='';
+ const result=await sw.dispatch(sw.request('./app.mjs',{cache:'only-if-cached'}));
+ assert.deepEqual(result,{networkError:true});
+ assert.equal(sw.networkCalls,0);
+ assert.equal(sw.putCalls,0);
+});
+test('navigation repairs an empty cached module as a complete shell before serving HTML',async()=>{
+ const sw=worker();await sw.lifecycle('install');
+ sw.versions.get(shellVersion).get(new URL('./app.mjs',scope).href).bodyBytes='';
+ const page=await sw.dispatch(sw.request('./index.html',{mode:'navigate'}));
+ assert.equal(page?.url,new URL('./index.html',scope).href);
+ assert.equal(sw.addAllCalls,2,'A complete fresh staging batch is required');
+ assert.equal(sw.putCalls,shell.length);
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),false);
+ const cached=await sw.dispatch(sw.request('./app.mjs',{cache:'only-if-cached'}));
+ assert.ok(cached.bodyBytes.length>0);
+});
+test('complete-looking but empty staging is cleared and refetched before promotion',async()=>{
+ const installed=worker();await installed.lifecycle('install');
+ const versions=installed.versions,active=versions.get(shellVersion);
+ const staged=new Map(active);
+ const badPath=new URL('./style.css',scope).href;
+ staged.set(badPath,{...staged.get(badPath),bodyBytes:''});
+ versions.set(shellVersion+'-recovery',staged);
+ active.delete(new URL('./app.mjs',scope).href);
+ const sw=worker({sharedVersions:versions});
+ const page=await sw.dispatch(sw.request('./index.html',{mode:'navigate'}));
+ assert.equal(page?.url,new URL('./index.html',scope).href);
+ assert.equal(sw.addAllCalls,1,'Untrusted staging must be refetched');
+ assert.equal(sw.putCalls,shell.length);
+ assert.equal(versions.has(shellVersion+'-recovery'),false);
+ assert.ok(versions.get(shellVersion).get(badPath).bodyBytes.length>0);
 });

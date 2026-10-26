@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v50';
+const VERSION='klarpunkt-shell-v51';
 const SHELL_PREFIX='klarpunkt-shell-v';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Fetch public shell bytes without browser cookies, referrers, cross-origin
@@ -58,6 +58,17 @@ function trustedShellAsset(response,path){
    path.endsWith('.png')?'png':'manifest';
  return MIME[kind].includes(type);
 }
+// A metadata-valid HTTP 200 can still contain an empty, unreadable or
+// unexpectedly large body. Check the actual bytes before trusting a shell
+// cache hit, including on cold worker restarts and after browser eviction.
+const MAX_SHELL_ASSET_BYTES=2*1024*1024;
+const MAX_SHELL_TOTAL_BYTES=8*1024*1024;
+async function trustedShellBodySize(response){
+ try{
+  const body=await response.clone().arrayBuffer();
+  return body.byteLength>0&&body.byteLength<=MAX_SHELL_ASSET_BYTES?body.byteLength:0;
+ }catch{return 0;}
+}
 // CacheStorage.put() can resolve even when a backend silently ignores or
 // alters an entry. Metadata-only checks cannot detect a mixed-version shell:
 // compare the actual decoded response bodies before removing the durable
@@ -66,16 +77,20 @@ async function sameShellBytes(expected,stored){
  if(!expected||!stored||typeof expected.clone!=='function'||typeof stored.clone!=='function')return false;
  try{
   const [a,b]=await Promise.all([expected.clone().arrayBuffer(),stored.clone().arrayBuffer()]);
-  if(!a.byteLength||a.byteLength!==b.byteLength)return false;
+  if(!a.byteLength||a.byteLength>MAX_SHELL_ASSET_BYTES||a.byteLength!==b.byteLength)return false;
   const before=new Uint8Array(a),after=new Uint8Array(b);
   for(let i=0;i<before.length;i++)if(before[i]!==after[i])return false;
   return true;
  }catch{return false;}
 }
 async function completeShell(cache){
- // Never replace a working older shell with a partial or poisoned cache.
+ // Never replace a working older shell with a partial, poisoned or empty
+ // cache. Checking bodies also catches silent CacheStorage eviction or a
+ // backend that acknowledges a write but persists an unreadable response.
  const matches=await Promise.all(FILES.map(path=>cache.match(path)));
- return matches.every((response,index)=>trustedShellAsset(response,FILES[index]));
+ if(!matches.every((response,index)=>trustedShellAsset(response,FILES[index])))return false;
+ const sizes=await Promise.all(matches.map(trustedShellBodySize));
+ return sizes.every(Boolean)&&sizes.reduce((sum,size)=>sum+size,0)<=MAX_SHELL_TOTAL_BYTES;
 }
 // Stage recovery in an isolated cache: a successful HTTP 200 may still have
 // the wrong MIME or origin. Never poison a partially healthy current release
@@ -243,7 +258,7 @@ self.addEventListener('activate',event=>{
 async function promotedRuntimeAsset(cache,request,shellPath){
  try{
   const current=await stableCacheHit(cache,request);
-  return trustedShellAsset(current,shellPath)?current:Response.error();
+  return trustedShellAsset(current,shellPath)&&await trustedShellBodySize(current)?current:Response.error();
  }catch{return Response.error();}
 }
 self.addEventListener('fetch',event=>{
@@ -287,7 +302,7 @@ self.addEventListener('fetch',event=>{
   let hit;
   try{hit=await stableCacheHit(cache,request);}
   catch{return Response.error();}
-  if(trustedShellAsset(hit,shellPath))return hit;
+  if(trustedShellAsset(hit,shellPath)&&await trustedShellBodySize(hit))return hit;
   if(request.cache==='only-if-cached')return Response.error();
   // Cache-only requests must not indirectly join a network operation.
   const ongoing=runtimeRepairs.get(shellPath);
