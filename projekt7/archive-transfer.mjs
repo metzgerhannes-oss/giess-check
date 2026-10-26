@@ -96,15 +96,25 @@ function prepareArchiveMerge(existing,incoming){
  let added=0;
  for(const item of newItems){
   const previous=byId.get(item.id);
-  if(previous&&JSON.stringify(previous)===JSON.stringify(item))continue;
+  // A replay must not manufacture new snapshots when the same imported
+  // revision already exists under its original or a collision-resolved ID.
+  const sameContents=entry=>entry.createdAt===item.createdAt&&
+   JSON.stringify(entry.project)===JSON.stringify(item.project);
+  if(previous&&sameContents(previous))continue;
   let id=item.id;
   if(previous){
-   // Preserve both entries when an imported ID names different contents.
-   let counter=0;
-   do{
+   // Keep the historical suffix scheme so imports merged by older releases
+   // remain recognizable. Walk occupied suffixes rather than always appending
+   // a new one: repeated imports must be byte-for-byte no-ops.
+   let counter=0,alreadyImported=false;
+   while(true){
     const suffix='_'+(++counter).toString(36);
     id='s'+item.id.slice(1,39-1-suffix.length)+suffix;
-   }while(byId.has(id));
+    const occupied=byId.get(id);
+    if(!occupied)break;
+    if(sameContents(occupied)){alreadyImported=true;break;}
+   }
+   if(alreadyImported)continue;
   }
   const entry=id===item.id?item:{...item,id};
   merged.push(entry);byId.set(id,entry);added++;
