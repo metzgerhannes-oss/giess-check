@@ -242,3 +242,6 @@ Zusätzlich zum ausdrücklich bestätigten Archiv-Ersatz können portable Archiv
 
 ## Sprint 56: Strikte Archivstruktur und bestätigte Schreibbarkeit
 Auch manuell beschädigte Browser-Archive mit als Arrays codierten IDs werden als beschädigt behandelt, nicht als gültige Stände. Direkte Import- und Zusammenführungsaufrufe weisen lückenhafte Arrays und Array-Objekte vor jeder Speicherung ab. Nach einem Archiv-Schreibvorgang genügt nicht allein der Bytevergleich: Der persistierte Stand muss erneut vollständig lesbar und strukturell gültig sein. Regressionstests prüfen unveränderte Daten bei fehlerhaften Eingaben. Die Offline-Shell erhält eine neue Cache-Version; keine Änderungen an der Stamm-Anwendung.
+
+## Sprint 57: Idempotente Speicherung und Sicherungserhalt
+Ein unveränderter aktiver Stand mit gültiger Rückfallkopie wird nicht erneut geschrieben: Die vorherige Sicherungsrevision bleibt erhalten. Fehlende oder beschädigte Rückfallkopien werden weiterhin repariert. Identische Archivimporte benötigen keinen Bestätigungsdialog und keinen Schreibvorgang; konkurrierende Revisionen werden weiterhin abgewiesen. Zusätzliche Node-Regressionen sichern diese Datenverlustinvarianten ab.

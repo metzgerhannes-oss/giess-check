@@ -382,7 +382,9 @@ byId('archive-import-file').addEventListener('change',async event=>{
   const count=await importArchiveBackupAsync(browserStore(),()=>file.text(),baseline,n=>confirm('Das bisherige lokale Archiv durch '+n+' importierte Stände ERSETZEN? Der aktuelle Arbeitsstand bleibt unverändert. Bitte das bisherige Archiv vorher als Datei sichern.'));
   if(count===null)return;
   renderArchive();
-  status.textContent=count+' Archivstände importiert. Aktueller Arbeitsstand unverändert.';
+  status.textContent=baseline===expectedArchiveRaw
+   ?'Archivdatei bereits identisch – keine Daten geändert.'
+   :count+' Archivstände importiert. Aktueller Arbeitsstand unverändert.';
  }catch(err){
   if(err?.code==='ARCHIVE_CONFLICT'){renderArchive();status.textContent='Archiv inzwischen geändert. Liste aktualisiert; Import bitte erneut starten.';}
   else alert('Archiv konnte nicht eingelesen werden: '+(err?.message||'ungültige Datei'));

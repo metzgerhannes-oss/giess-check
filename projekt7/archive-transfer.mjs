@@ -55,15 +55,18 @@ export function importArchiveBackup(storage,parsed,expectedRaw=undefined){
   throw error;
  }
  if(!parsed||parsed.version!==1)throw new Error('Ungültiges Archivformat.');
- const payload=JSON.stringify({version:1,items:normalizeItems(parsed.items)});
+ const normalized=normalizeItems(parsed.items);
+ const payload=JSON.stringify({version:1,items:normalized});
  checkSize(payload);
  // Validation may be expensive; detect an intervening tab write immediately
  // before replacement. localStorage still has no atomic compare-and-swap.
  assertArchiveVersion(storage,baseline);
+ // Idempotent replacement preserves the original bytes and avoids quota risk.
+ if(JSON.stringify(state.items)===JSON.stringify(normalized))return normalized.length;
  // One atomic localStorage.setItem; quota errors preserve the previous archive.
  storage.setItem(ARCHIVE_KEY,payload);
  verifyArchiveWrite(storage,payload);
- return parsed.items.length;
+ return normalized.length;
 }
 
 // Capture and check the displayed archive revision before asynchronous file
@@ -84,6 +87,8 @@ export async function importArchiveBackupAsync(storage,readText,expectedRaw,appr
  // A slow file read may outlive the archive revision shown to the user.
  // Refuse a stale import before asking for confirmation at all.
  assertArchiveVersion(storage,expectedRaw);
+ // Identical normalized archives require neither a write nor approval.
+ if(JSON.stringify(initial.items)===JSON.stringify(parsed.items))return parsed.items.length;
  // Confirmation may be asynchronous (custom dialogs, accessibility flows).
  // Never interpret a pending Promise as approval; recheck the same revision
  // inside importArchiveBackup after confirmation settles.

@@ -55,6 +55,20 @@ export function saveProject(storage,project,override=false,expectedPrimaryRaw=un
  }
  const nextRaw=JSON.stringify(clean);
  if(new TextEncoder().encode(nextRaw).byteLength>MAX_BACKUP_BYTES)throw new Error('Projekt überschreitet die sichere Speichergröße.');
+ // Repeated saves must not erase the preceding valid recovery revision.
+ // A missing or damaged backup is still repaired by the normal write path.
+ if(last&&current===nextRaw&&expectedRecoveredBackupRaw===undefined){
+  let healthyBackup=false;
+  try{healthyBackup=decode(storage.getItem(BACKUP_KEY))!==null;}catch{}
+  if(healthyBackup){
+   if(storage.getItem(PRIMARY_KEY)!==current){
+    const error=new Error('Der Browserstand wurde während des Speicherns geändert.');
+    error.code='STORAGE_CONFLICT';
+    throw error;
+   }
+   return clean;
+  }
+ }
  let backupRaw=null;
  let observedBackupRaw=undefined;
  let backupReadError=null;
