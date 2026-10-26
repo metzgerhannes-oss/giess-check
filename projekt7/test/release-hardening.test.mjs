@@ -78,6 +78,6 @@ test('archive replacement rejects stale and quota-failed writes without mutation
  assert.throws(()=>importArchiveBackup(s,file,'stale'),{code:'ARCHIVE_CONFLICT'});
  assert.deepEqual(s.dump(),before);
  const fail={getItem:key=>s.getItem(key),setItem:()=>{throw Error('QuotaExceededError');}};
- assert.throws(()=>importArchiveBackup(fail,file,s.getItem(ARCHIVE_KEY)),/QuotaExceededError/);
+ assert.throws(()=>importArchiveBackup(fail,{version:1,items:[]},s.getItem(ARCHIVE_KEY)),/QuotaExceededError/);
  assert.deepEqual(s.dump(),before);
 });

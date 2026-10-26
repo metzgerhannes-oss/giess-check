@@ -41,7 +41,7 @@ test('conflicts, quota errors and corrupt storage preserve the previous archive'
  assert.throws(()=>importArchiveBackup(s,parsed,'stale'),{code:'ARCHIVE_CONFLICT'});
  assert.equal(s.getItem(ARCHIVE_KEY),before);
  const fail={getItem:k=>s.getItem(k),setItem:()=>{throw new Error('QuotaExceededError')}};
- assert.throws(()=>importArchiveBackup(fail,parsed,before),/QuotaExceededError/);
+ assert.throws(()=>importArchiveBackup(fail,{version:1,items:[]},before),/QuotaExceededError/);
  assert.equal(s.getItem(ARCHIVE_KEY),before);
  s.setItem(ARCHIVE_KEY,'{damaged');
  assert.throws(()=>importArchiveBackup(s,parsed,undefined),/beschädigt/);
