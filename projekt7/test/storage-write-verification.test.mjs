@@ -110,7 +110,7 @@ test('archive import with denied post-write verification never changes active ke
   getItem(key){if(wrote&&key===ARCHIVE_KEY)throw Error('SecurityError');return s.getItem(key);},
   setItem(key,value){s.setItem(key,value);if(key===ARCHIVE_KEY)wrote=true;}
  };
- assert.throws(()=>importArchiveBackup(faulty,{version:1,items:[]},null),/SecurityError/);
+ assert.throws(()=>importArchiveBackup(faulty,{version:1,items:[{id:'s1',createdAt:1,project:named('Archived')}]},null),/SecurityError/);
  assert.equal(s.getItem(PRIMARY_KEY),beforePrimary);
  assert.equal(s.getItem(BACKUP_KEY),beforeBackup);
 });
