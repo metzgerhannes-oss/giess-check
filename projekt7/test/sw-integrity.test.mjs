@@ -1312,3 +1312,57 @@ test('complete-looking but empty staging is cleared and refetched before promoti
  assert.equal(versions.has(shellVersion+'-recovery'),false);
  assert.ok(versions.get(shellVersion).get(badPath).bodyBytes.length>0);
 });
+
+test('delayed cached body validation cannot replay an asset from before promotion',async()=>{
+ const sw=worker();await sw.lifecycle('install');
+ const entries=sw.versions.get(shellVersion);
+ const appUrl=new URL('./app.mjs',scope).href;
+ const stale=entries.get(appUrl),originalRead=stale.arrayBuffer.bind(stale);
+ let releaseRead,signalPaused;
+ const paused=new Promise(resolve=>{signalPaused=resolve;});
+ const barrier=new Promise(resolve=>{releaseRead=resolve;});
+ let reads=0;
+ stale.arrayBuffer=async()=>{
+  if(++reads===1){signalPaused();await barrier;}
+  return originalRead();
+ };
+ const pending=sw.dispatch(sw.request('./app.mjs'));
+ await paused;
+ entries.delete(new URL('./core.mjs',scope).href);
+ const page=await sw.dispatch(sw.request('./index.html',{mode:'navigate'}));
+ assert.equal(page?.ok,true);
+ releaseRead();
+ const asset=await pending;
+ assert.equal(asset,entries.get(appUrl),'Only the newly promoted asset may be served');
+ assert.notEqual(asset,stale,'Delayed body validation must not leak the old response');
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),false);
+});
+
+test('delayed network body validation never overwrites a promoted offline asset',async()=>{
+ let releaseRead,signalPaused;
+ const paused=new Promise(resolve=>{signalPaused=resolve;});
+ const barrier=new Promise(resolve=>{releaseRead=resolve;});
+ const sw=worker({networkResponse:req=>({
+  ok:true,status:200,redirected:false,type:'basic',url:req.url,
+  headers:{get:name=>name==='content-type'?'text/javascript':null},
+  bodyBytes:'pre-promotion-network:'+req.url,clone(){return this;},
+  async arrayBuffer(){
+   signalPaused();await barrier;
+   return new TextEncoder().encode(this.bodyBytes).buffer;
+  }
+ })});
+ await sw.lifecycle('install');
+ const entries=sw.versions.get(shellVersion),appUrl=new URL('./app.mjs',scope).href;
+ entries.delete(appUrl);
+ entries.delete(new URL('./core.mjs',scope).href);
+ const pending=sw.dispatch(sw.request('./app.mjs'));
+ await paused;
+ const page=await sw.dispatch(sw.request('./index.html',{mode:'navigate'}));
+ assert.equal(page?.ok,true);
+ const writes=sw.putCalls;
+ releaseRead();
+ const asset=await pending;
+ assert.equal(asset,entries.get(appUrl),'Promoted bytes must win over delayed network validation');
+ assert.equal(sw.putCalls,writes,'Stale network bytes must never be written after promotion');
+ assert.equal(sw.versions.has(shellVersion+'-recovery'),false);
+});
