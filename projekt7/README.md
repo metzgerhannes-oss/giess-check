@@ -1,5 +1,7 @@
 # Klarpunkt – Projekt 7
 
+**V1.0-Release-/Betriebsnachweis:** [RELEASE.md](./RELEASE.md). Der Release-Status wird ausschließlich nach grünem CI-/HTTPS-Gate und erfolgreichem Deployment freigegeben.
+
 Eigenständige, kostenlos betreibbare PWA im Unterverzeichnis des vorhandenen Repositories. **Gieß-Check im Stammverzeichnis bleibt unverändert.**
 
 ## Nutzung
