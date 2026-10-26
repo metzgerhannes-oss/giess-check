@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v51';
+const VERSION='klarpunkt-shell-v52';
 const SHELL_PREFIX='klarpunkt-shell-v';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Fetch public shell bytes without browser cookies, referrers, cross-origin
@@ -255,10 +255,29 @@ self.addEventListener('activate',event=>{
 // Runtime writes may resolve AFTER a navigation has started whole-shell
 // promotion. In that case the old network response is not safe to deliver:
 // re-read the epoch-stable promoted asset instead, or fail closed.
+// A cache hit can become stale while its body is being read. Both the
+// metadata lookup and the asynchronous byte check must belong to one stable
+// shell epoch; otherwise a previous release can escape after promotion.
+async function stableTrustedRuntimeAsset(cache,request,shellPath){
+ for(let attempt=0;attempt<5;attempt++){
+  const epoch=shellEpoch;
+  const hit=await stableCacheHit(cache,request);
+  if(recoveryInFlight||epoch!==shellEpoch)continue;
+  if(!trustedShellAsset(hit,shellPath))return null;
+  const valid=await trustedShellBodySize(hit);
+  if(recoveryInFlight||epoch!==shellEpoch)continue;
+  // A runtime write failure can create a durable recovery fence without
+  // changing the epoch. Never replay bytes across that separate transition.
+  const fenced=await pendingPromotion();
+  if(recoveryInFlight||epoch!==shellEpoch)continue;
+  if(fenced||unfencedWriteFailure||recoveryFailed)throw new Error('Offline shell is not committed');
+  return valid?hit:null;
+ }
+ throw new Error('Offline shell changed during body validation');
+}
 async function promotedRuntimeAsset(cache,request,shellPath){
  try{
-  const current=await stableCacheHit(cache,request);
-  return trustedShellAsset(current,shellPath)&&await trustedShellBodySize(current)?current:Response.error();
+  return await stableTrustedRuntimeAsset(cache,request,shellPath)||Response.error();
  }catch{return Response.error();}
 }
 self.addEventListener('fetch',event=>{
@@ -300,9 +319,9 @@ self.addEventListener('fetch',event=>{
  event.respondWith(caches.open(VERSION).then(async cache=>{
   const shellPath=PATH_BY_PATHNAME.get(url.pathname);
   let hit;
-  try{hit=await stableCacheHit(cache,request);}
+  try{hit=await stableTrustedRuntimeAsset(cache,request,shellPath);}
   catch{return Response.error();}
-  if(trustedShellAsset(hit,shellPath)&&await trustedShellBodySize(hit))return hit;
+  if(hit)return hit;
   if(request.cache==='only-if-cached')return Response.error();
   // Cache-only requests must not indirectly join a network operation.
   const ongoing=runtimeRepairs.get(shellPath);
@@ -332,6 +351,12 @@ self.addEventListener('fetch',event=>{
   // release, trigger a needless recovery fence, or appear successful online.
   if(!trustedShellAsset(response,shellPath)||!(await trustedShellBodySize(response))){
    return Response.error();
+  }
+  // The response body read itself is asynchronous. A complete promotion can
+  // start and finish during that read, even if the fetch began in this epoch.
+  // Reject those stale bytes before the first CacheStorage write.
+  if(recoveryInFlight||shellEpoch!==beforeFetch){
+   return promotedRuntimeAsset(cache,request,shellPath);
   }
   // Track and await each best-effort write: whole-shell recovery waits for
   // repairs already in flight, but quota failure still permits online use.
