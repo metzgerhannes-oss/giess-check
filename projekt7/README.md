@@ -248,3 +248,18 @@ Ein unveränderter aktiver Stand mit gültiger Rückfallkopie wird nicht erneut 
 
 ## Sprint 58: Offline-Neustart und konkurrierende Shell-Reparaturen
 Zeitgleiche Reparaturen desselben öffentlichen Shell-Pfads verwenden einen gemeinsamen anonymen Netzwerkabruf und einen verifizierten Cache-Schreibvorgang. Andere Pfade bleiben unabhängig; reine Cache-Anfragen starten auch indirekt keine Netzwerkoperation. Ein fehlgeschlagener Abruf blockiert spätere Versuche nicht. Synthetische Regressionen prüfen parallele Requests, Cache-only, Netzwerkfehler mit Wiederanlauf, Offline-Worker-Neustart und den getrennten Cache bei Versionswechsel oder fehlgeschlagenem Update. Shell-Version v49. CacheStorage bleibt nicht atomar; vollständige Eviction und physische iPhone-/Safari-Abnahme sind weiterhin Grenzen.
+
+## Sprint 59: Vollständige Bereinigung unterbrochener Offline-Staging-Caches
+
+Ein nur teilweise gefüllter Wiederherstellungs-Cache kann gültig aussehende
+Dateien aus einem vorherigen fehlgeschlagenen Versuch enthalten. Vor einem
+erneuten vollständigen Download werden solche Reste jetzt einzeln entfernt und
+ihr tatsächliches Verschwinden nachgelesen. Erst dann darf die vollständige
+Shell neu aufgebaut und nach bytegenauer Bestätigung übernommen werden.
+Verweigerte oder nur scheinbar erfolgreiche Löschungen brechen vor dem ersten
+Schreibzugriff auf die aktive Shell ab; die dauerhafte Wiederherstellungs-Sperre
+bleibt bestehen. Vier synthetische Regressionen prüfen unvollständige
+Nachladungen, verweigerte und vorgetäuschte Löschungen sowie erfolgreiche
+Wiederaufnahme mit anschließender Offline-Nutzung. Shell-Version v50.
+Browserseitige Eviction und nicht atomare CacheStorage-Transaktionen bleiben
+technische Grenzen.
