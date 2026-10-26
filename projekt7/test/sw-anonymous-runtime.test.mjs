@@ -5,7 +5,7 @@ import {runInNewContext} from 'node:vm';
 
 const source=readFileSync(new URL('../sw.js',import.meta.url),'utf8');
 const scope='https://example.test/giess-check/projekt7/';
-function worker({quota=false}={}){
+function worker({quota=false,bodyBytes=undefined,bodyReadError=false}={}){
  const handlers=new Map(),cacheEntries=new Map(),network=[],writes=[];
  const cache={
   match:async key=>cacheEntries.get(typeof key==='string'?new URL(key,scope).href:key.url),
@@ -22,9 +22,12 @@ function worker({quota=false}={}){
   return {
    ok:true,status:200,redirected:false,type:'basic',url:request.url,
    headers:{get:name=>name==='content-type'?'text/javascript':null},
-   bodyBytes:'public:'+request.url,
+   bodyBytes:bodyBytes===undefined?'public:'+request.url:bodyBytes,
    clone(){return this;},
-   async arrayBuffer(){return new TextEncoder().encode(this.bodyBytes).buffer;}
+   async arrayBuffer(){
+    if(bodyReadError)throw new Error('Unreadable response body');
+    return new TextEncoder().encode(this.bodyBytes).buffer;
+   }
   };
  };
  runInNewContext(source,{self,caches,fetch,URL,Request,Set,Response:{error:()=>({networkError:true})}});
@@ -124,4 +127,33 @@ test('incoming cross-site referrer and tracking headers cannot influence canonic
  assert.equal(sent.headers.has('x-visitor-id'),false);
  assert.equal(sent.headers.has('x-forwarded-for'),false);
  assert.equal(h.writes[0].referrerPolicy,'no-referrer');
+});
+
+for(const [label,options] of [
+ ['empty response bytes',{bodyBytes:''}],
+ ['unreadable response bytes',{bodyReadError:true}],
+ ['oversized response bytes',{bodyBytes:'x'.repeat(2*1024*1024+1)}],
+ ['multibyte response exceeding the byte limit',{bodyBytes:'ü'.repeat(1024*1024+1)}]
+]){
+ test('runtime repair rejects '+label+' before writing or serving',async()=>{
+  const h=worker(options);
+  const result=await h.dispatch(new Request(scope+'app.mjs'));
+  assert.equal(result.networkError,true);
+  assert.equal(h.network.length,1);
+  assert.equal(h.writes.length,0,'Invalid bytes must never reach CacheStorage');
+  assert.equal(h.cacheEntries.size,0);
+ });
+}
+
+test('simultaneous invalid runtime repairs share one fetch and fail closed',async()=>{
+ const h=worker({bodyBytes:''});
+ const [first,second]=await Promise.all([
+  h.dispatch(new Request(scope+'app.mjs')),
+  h.dispatch(new Request(scope+'app.mjs'))
+ ]);
+ assert.equal(first.networkError,true);
+ assert.equal(second.networkError,true);
+ assert.equal(h.network.length,1);
+ assert.equal(h.writes.length,0);
+ assert.equal(h.cacheEntries.size,0);
 });

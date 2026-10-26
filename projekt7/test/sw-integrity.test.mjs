@@ -867,7 +867,9 @@ for(const [label,writeFault] of [
    networkResponse:req=>({
     ok:true,status:200,redirected:false,type:'basic',url:req.url,
     headers:{get:name=>name==='content-type'?'text/javascript':null},
-    staleRuntime:true,clone(){return this;}
+    staleRuntime:true,bodyBytes:'stale-runtime:'+req.url,
+    clone(){return this;},
+    async arrayBuffer(){return new TextEncoder().encode(this.bodyBytes).buffer;}
    })
   });
   await sw.lifecycle('install');

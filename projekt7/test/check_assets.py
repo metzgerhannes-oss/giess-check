@@ -148,7 +148,8 @@ assert sw.count("mode:'same-origin'") >= 2, "Anonymous shell requests must remai
 
 # Sprint 20: fail closed on partial/untrusted network shell assets, recover poisoned HTML only after a complete trust gate.
 assert 'response.status!==200' in sw
-assert 'if(!trustedShellAsset(response,shellPath))return Response.error()' in sw
+assert 'if(!trustedShellAsset(response,shellPath)||!(await trustedShellBodySize(response)))' in sw
+assert sw.index('await trustedShellBodySize(response)',sw.index('const repairing=(async()=>')) < sw.index('const writing=(async()=>',sw.index('const repairing=(async()=>')), "Validate response bytes before any runtime cache write"
 # Navigation must validate a complete, epoch-stable shell before serving HTML.
 assert "stableCacheHit(cache,'./index.html',{" in sw
 assert "requireComplete:true,allowFailedRecovery:true" in sw
