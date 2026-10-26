@@ -12,6 +12,11 @@ const mime=path=>path==='./'||path.endsWith('.html')?'text/html':
 const trusted=(path,extra={})=>({
  ok:true,status:200,redirected:false,type:'basic',url:new URL(path,scope).href,
  headers:{get:name=>name==='content-type'?mime(path):null},
+ // Real CacheStorage responses expose clone() and readable body bytes.
+ // Keep the fixture realistic so a trusted hit cannot bypass body checks.
+ bodyBytes:'fixture:'+path,
+ clone(){return this;},
+ async arrayBuffer(){return new TextEncoder().encode(this.bodyBytes).buffer;},
  cached:true,...extra
 });
 function createWorker(){
