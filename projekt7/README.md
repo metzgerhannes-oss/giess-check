@@ -245,3 +245,6 @@ Auch manuell beschädigte Browser-Archive mit als Arrays codierten IDs werden al
 
 ## Sprint 57: Idempotente Speicherung und Sicherungserhalt
 Ein unveränderter aktiver Stand mit gültiger Rückfallkopie wird nicht erneut geschrieben: Die vorherige Sicherungsrevision bleibt erhalten. Fehlende oder beschädigte Rückfallkopien werden weiterhin repariert. Identische Archivimporte benötigen keinen Bestätigungsdialog und keinen Schreibvorgang; konkurrierende Revisionen werden weiterhin abgewiesen. Zusätzliche Node-Regressionen sichern diese Datenverlustinvarianten ab.
+
+## Sprint 58: Offline-Neustart und konkurrierende Shell-Reparaturen
+Zeitgleiche Reparaturen desselben öffentlichen Shell-Pfads verwenden einen gemeinsamen anonymen Netzwerkabruf und einen verifizierten Cache-Schreibvorgang. Andere Pfade bleiben unabhängig; reine Cache-Anfragen starten auch indirekt keine Netzwerkoperation. Ein fehlgeschlagener Abruf blockiert spätere Versuche nicht. Synthetische Regressionen prüfen parallele Requests, Cache-only, Netzwerkfehler mit Wiederanlauf, Offline-Worker-Neustart und den getrennten Cache bei Versionswechsel oder fehlgeschlagenem Update. Shell-Version v49. CacheStorage bleibt nicht atomar; vollständige Eviction und physische iPhone-/Safari-Abnahme sind weiterhin Grenzen.

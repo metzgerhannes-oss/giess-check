@@ -9,9 +9,9 @@ assert.ok(shellVersion,'Offline shell version must be declared');
 const oldShellVersion='klarpunkt-shell-v'+(Number(shellVersion.split('-v').at(-1))-1);
 const scope='https://example.test/giess-check/projekt7/';
 const shell=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
-function worker({missing=null,failPrecache=false,networkResponse=null,failPut=false,failPutAt=null,badPrecache=null,holdPut=false,failDelete=false,sharedVersions=null,failPutAfterWriteAt=null,skipPutAt=null,corruptPutAt=null,evictStageAt=null,ignoreRecoveryOpen=false,failEntryDelete=false}={}){
+function worker({missing=null,failPrecache=false,networkResponse=null,failPut=false,failPutAt=null,badPrecache=null,holdPut=false,failDelete=false,sharedVersions=null,failPutAfterWriteAt=null,skipPutAt=null,corruptPutAt=null,evictStageAt=null,ignoreRecoveryOpen=false,failEntryDelete=false,workerSource=source,version=shellVersion}={}){
  const handlers=new Map(),versions=sharedVersions??new Map(),deleted=[];
- const current=shellVersion,old=oldShellVersion;
+ const current=version,old='klarpunkt-shell-v'+(Number(version.split('-v').at(-1))-1);
  const oldEntries=new Map(shell.map(path=>[new URL(path,scope).href,{old:true}]));
  if(!versions.has(old))versions.set(old,oldEntries);
  if(!versions.has('unrelated-app'))versions.set('unrelated-app',new Map());
@@ -60,7 +60,7 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
         ok:fault?.ok??true,status:fault?.status??200,redirected:fault?.redirected??false,
         type:fault?.type??'basic',url:fault?.url??keyOf(path),
         headers:{get:name=>fault?.headers?.[name]??(name==='content-type'?fault?.mime??mime:null)},
-        bodyBytes:path+':batch-'+addAllCalls,
+        bodyBytes:path+':'+current+':batch-'+addAllCalls,
         clone(){return this;},
         async arrayBuffer(){return new TextEncoder().encode(this.bodyBytes).buffer;}
        });
@@ -119,7 +119,7 @@ function worker({missing=null,failPrecache=false,networkResponse=null,failPut=fa
    async arrayBuffer(){return new TextEncoder().encode(this.bodyBytes).buffer;}
   };
  };
- runInNewContext(source,{self,caches,fetch,URL,Request,Set,Response:{error:()=>({networkError:true})}});
+ runInNewContext(workerSource,{self,caches,fetch,URL,Request,Set,Response:{error:()=>({networkError:true})}});
  const lifecycle=type=>{
   let promise;
   handlers.get(type)({waitUntil:p=>{promise=p;}});
@@ -1086,4 +1086,105 @@ test('unfenced corruption recovers only after a durable full-shell promotion',as
  assert.equal(sw.versions.get(shellVersion).size,shell.length);
  const asset=await sw.dispatch(sw.request('./app.mjs'));
  assert.equal(asset?.url,new URL('./app.mjs',scope).href,'Repaired shell is available offline');
+});
+
+test('simultaneous repairs share one network request and survive offline restart',async()=>{
+ const sw=worker();sw.pauseNextFetch('./app.mjs');
+ const first=sw.dispatch(sw.request('./app.mjs'));
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(sw.fetchPaused,true);
+ const second=sw.dispatch(sw.request('./app.mjs'));
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(sw.networkCalls,1,'Only one anonymous fetch per missing path');
+ sw.releaseFetch();
+ const [a,b]=await Promise.all([first,second]);
+ assert.equal(a.ok,true);assert.equal(b.ok,true);
+ assert.equal(a.bodyBytes,b.bodyBytes);
+ assert.equal(sw.putCalls,1,'Only one durable cache write per path');
+ const restarted=worker({sharedVersions:sw.versions,failPrecache:true,
+  networkResponse:()=>{throw Error('Offline');}});
+ const offline=await restarted.dispatch(restarted.request('./app.mjs',{cache:'only-if-cached'}));
+ assert.equal(offline.bodyBytes,a.bodyBytes);
+ assert.equal(restarted.networkCalls,0);
+});
+
+test('cache-only request cannot join an online repair',async()=>{
+ const sw=worker();sw.pauseNextFetch('./app.mjs');
+ const pending=sw.dispatch(sw.request('./app.mjs'));
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(sw.fetchPaused,true);
+ assert.deepEqual(await sw.dispatch(sw.request('./app.mjs',{cache:'only-if-cached'})),
+  {networkError:true});
+ assert.equal(sw.networkCalls,1);
+ sw.releaseFetch();assert.equal((await pending).ok,true);
+ assert.equal(sw.putCalls,1);
+});
+
+test('different shell paths repair independently during network stalls',async()=>{
+ const sw=worker();sw.pauseNextFetch('./app.mjs');
+ const pending=sw.dispatch(sw.request('./app.mjs'));
+ await new Promise(resolve=>setImmediate(resolve));
+ const css=await sw.dispatch(sw.request('./style.css'));
+ assert.equal(css.headers.get('content-type'),'text/css');
+ assert.equal(sw.networkCalls,2);
+ assert.equal(sw.putCalls,1);
+ sw.releaseFetch();assert.equal((await pending).ok,true);
+ assert.equal(sw.putCalls,2);
+});
+
+test('failed coalesced network request clears its slot for a later retry',async()=>{
+ let online=false;
+ const sw=worker({networkResponse:req=>{
+  if(!online)throw Error('Offline');
+  return {ok:true,status:200,redirected:false,type:'basic',url:req.url,
+   headers:{get:name=>name==='content-type'?'text/javascript':null},
+   bodyBytes:'online-again',clone(){return this;},
+   async arrayBuffer(){return new TextEncoder().encode(this.bodyBytes).buffer;}};
+ }});
+ sw.pauseNextFetch('./app.mjs');
+ const first=sw.dispatch(sw.request('./app.mjs'));
+ await new Promise(resolve=>setImmediate(resolve));
+ const second=sw.dispatch(sw.request('./app.mjs'));
+ await new Promise(resolve=>setImmediate(resolve));
+ sw.releaseFetch();
+ const failed=await Promise.allSettled([first,second]);
+ assert.equal(failed.filter(x=>x.status==='rejected').length,2);
+ assert.equal(sw.networkCalls,1);assert.equal(sw.putCalls,0);
+ online=true;
+ const repaired=await sw.dispatch(sw.request('./app.mjs'));
+ assert.equal(repaired.bodyBytes,'online-again');
+ assert.equal(sw.networkCalls,2);assert.equal(sw.putCalls,1);
+});
+
+test('offline version switch isolates new bytes and retains previous release',async()=>{
+ const old=worker();await old.lifecycle('install');await old.lifecycle('activate');
+ const nextVersion='klarpunkt-shell-v'+(Number(shellVersion.split('-v').at(-1))+1);
+ const nextSource=source.replace("const VERSION='"+shellVersion+"';",
+  "const VERSION='"+nextVersion+"';");
+ assert.notEqual(nextSource,source);
+ const next=worker({sharedVersions:old.versions,workerSource:nextSource,version:nextVersion});
+ await next.lifecycle('install');await next.lifecycle('activate');
+ const previous=await old.dispatch(old.request('./app.mjs',{cache:'only-if-cached'}));
+ const current=await next.dispatch(next.request('./app.mjs',{cache:'only-if-cached'}));
+ assert.equal(previous.bodyBytes.includes(shellVersion),true);
+ assert.equal(current.bodyBytes.includes(nextVersion),true);
+ assert.notEqual(previous.bodyBytes,current.bodyBytes);
+ assert.equal(old.networkCalls,0);assert.equal(next.networkCalls,0);
+ assert.equal(next.versions.get(shellVersion).size,shell.length);
+ assert.equal(next.versions.has(oldShellVersion),false);
+});
+
+test('failed next-version installation preserves old offline cache',async()=>{
+ const old=worker();await old.lifecycle('install');
+ const nextVersion='klarpunkt-shell-v'+(Number(shellVersion.split('-v').at(-1))+1);
+ const nextSource=source.replace("const VERSION='"+shellVersion+"';",
+  "const VERSION='"+nextVersion+"';");
+ const next=worker({sharedVersions:old.versions,workerSource:nextSource,
+  version:nextVersion,failPrecache:true});
+ await assert.rejects(next.lifecycle('install'),/Precache failed/);
+ assert.equal(next.waiting,0);
+ const prior=await old.dispatch(old.request('./app.mjs',{cache:'only-if-cached'}));
+ assert.equal(prior.bodyBytes.includes(shellVersion),true);
+ assert.equal(old.networkCalls,0);
+ assert.equal(next.versions.get(shellVersion).size,shell.length);
 });

@@ -1,4 +1,4 @@
-const VERSION='klarpunkt-shell-v48';
+const VERSION='klarpunkt-shell-v49';
 const SHELL_PREFIX='klarpunkt-shell-v';
 const FILES=['./','./index.html','./style.css','./app.mjs','./core.mjs','./storage.mjs','./history.mjs','./unsaved.mjs','./archive.mjs','./archive-transfer.mjs','./backup.mjs','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./manifest.webmanifest'];
 // Fetch public shell bytes without browser cookies, referrers, cross-origin
@@ -101,6 +101,9 @@ let unfencedWriteFailure=false;
 // Runtime asset repairs and whole-shell promotion must not write the same
 // cache concurrently. An in-flight repair may complete the shell by itself.
 const runtimeWrites=new Set();
+// Coalesce concurrent anonymous repairs of one shell path; never share a
+// mutable cache write between independently fetched resource revisions.
+const runtimeRepairs=new Map();
 async function stableCacheHit(cache,path,{requireComplete=false,allowFailedRecovery=false}={}){
  for(let attempt=0;attempt<5;attempt++){
   const pending=recoveryInFlight;
@@ -275,6 +278,13 @@ self.addEventListener('fetch',event=>{
   catch{return Response.error();}
   if(trustedShellAsset(hit,shellPath))return hit;
   if(request.cache==='only-if-cached')return Response.error();
+  // Cache-only requests must not indirectly join a network operation.
+  const ongoing=runtimeRepairs.get(shellPath);
+  if(ongoing){
+   const shared=await ongoing;
+   return typeof shared.clone==='function'?shared.clone():shared;
+  }
+  const repairing=(async()=>{
   const beforeFetch=shellEpoch;
   // A page-controlled Request can carry arbitrary custom headers. Even with
   // credentials:'omit', forwarding those headers could return a personalized
@@ -343,5 +353,9 @@ self.addEventListener('fetch',event=>{
   // pre-promotion response after the shell epoch has changed.
   return recoveryInFlight||shellEpoch!==beforeFetch
    ?promotedRuntimeAsset(cache,request,shellPath):response;
+  })();
+  runtimeRepairs.set(shellPath,repairing);
+  try{return await repairing;}
+  finally{if(runtimeRepairs.get(shellPath)===repairing)runtimeRepairs.delete(shellPath);}
  }));
 });
